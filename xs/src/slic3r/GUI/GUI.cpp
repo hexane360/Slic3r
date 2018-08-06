@@ -1,12 +1,15 @@
 #include "GUI.hpp"
 #include "WipeTowerDialog.hpp"
 
+#include <iostream>   // XXX
 #include <assert.h>
 #include <cmath>
+#include <algorithm>
 
 #include <boost/lexical_cast.hpp>
 #include <boost/algorithm/string.hpp>
 #include <boost/format.hpp>
+#include <boost/lexical_cast.hpp>
 
 #if __APPLE__
 #import <IOKit/pwr_mgt/IOPMLib.h>
@@ -972,13 +975,99 @@ int get_export_option(wxFileDialog* dlg)
 
 }
 
-void get_current_screen_size(unsigned &width, unsigned &height)
+bool get_current_screen_size(wxWindow *window, unsigned &width, unsigned &height)
 {
-	wxDisplay display(wxDisplay::GetFromWindow(g_wxMainFrame));
+	const auto idx = wxDisplay::GetFromWindow(window);
+	if (idx == wxNOT_FOUND) {
+		return false;
+	}
+
+	wxDisplay display(idx);
 	const auto disp_size = display.GetClientArea();
 	width = disp_size.GetWidth();
 	height = disp_size.GetHeight();
+
+	return true;
 }
+
+// XXX: naming (pos??)
+void save_window_pos(wxTopLevelWindow *window, const std::string &name)
+{
+	const wxSize size = window->GetSize();
+	const auto maximized = window->IsMaximized() ? "1" : "0";
+
+	g_AppConfig->set((boost::format("_%1%_size") % name).str(), (boost::format("%1%;%2%") % size.GetWidth() % size.GetHeight()).str());
+	g_AppConfig->set((boost::format("_%1%_maximized") % name).str(), maximized);
+
+	{
+		const auto display_idx = wxDisplay::GetFromWindow(window);
+		if (display_idx == wxNOT_FOUND) { return; }
+
+		std::cerr << "display_idx: " << display_idx << std::endl;
+		const auto pos = window->GetPosition();
+		const auto pos_scr = window->GetScreenPosition();
+		std::cerr << "pos: " << pos.x << ", " << pos.y << std::endl;
+		std::cerr << "pos_scr: " << pos_scr.x << ", " << pos_scr.y << std::endl;
+	}
+}
+
+void restore_window_pos(wxTopLevelWindow *window, const std::string &name)
+{
+	const auto display_idx = wxDisplay::GetFromWindow(window);
+	if (display_idx == wxNOT_FOUND) { return; }
+
+	std::cerr << "display_idx: " << display_idx << std::endl;
+	const auto pos = window->GetPosition();
+	const auto pos_scr = window->GetScreenPosition();
+	std::cerr << "pos: " << pos.x << ", " << pos.y << std::endl;
+	std::cerr << "pos_scr: " << pos_scr.x << ", " << pos_scr.y << std::endl;
+
+	wxDisplay display(display_idx);
+	const auto disp_size = display.GetClientArea();
+	std::vector<std::string> pair;
+
+	try {
+		const auto key_size = (boost::format("_%1%_size") % name).str();
+		if (g_AppConfig->has(key_size)) {
+			if (unescape_strings_cstyle(g_AppConfig->get(key_size), pair) && pair.size() == 2) {
+				auto width = boost::lexical_cast<int>(pair[0]);
+				auto height = boost::lexical_cast<int>(pair[1]);
+
+				// Sanitize the size on current screen
+				const wxPoint pos = window->GetPosition();
+				width = std::min(width, disp_size.GetWidth() - pos.x);
+				height = std::min(height, disp_size.GetHeight() - pos.y);
+
+				window->SetSize(width, height);
+			}
+		}
+	} catch(const boost::bad_lexical_cast &) {}
+
+	const auto key_maximized = (boost::format("_%1%_maximized") % name).str();
+	if (g_AppConfig->get(key_maximized) == "1") {
+		// window->Maximize(true);
+	}
+
+	for (unsigned i = 0; i < wxDisplay::GetCount(); i++) {
+		wxDisplay display(i);
+		auto rect = display.GetClientArea();
+		std::cerr << boost::format("Display %1%: ([%2%, %3%], %4%x%5%)") % i % rect.GetX() % rect.GetY() % rect.GetWidth() % rect.GetHeight() << std::endl;
+	}
+
+	{
+		const auto display_idx = wxDisplay::GetFromWindow(window);
+		if (display_idx == wxNOT_FOUND) { return; }
+
+		std::cerr << "display_idx: " << display_idx << std::endl;
+		const auto pos = window->GetPosition();
+		const auto pos_scr = window->GetScreenPosition();
+		std::cerr << "pos: " << pos.x << ", " << pos.y << std::endl;
+		std::cerr << "pos_scr: " << pos_scr.x << ", " << pos_scr.y << std::endl;
+	}
+
+	window->Move(330, 1450);
+}
+
 
 void about()
 {
