@@ -990,25 +990,15 @@ bool get_current_screen_size(wxWindow *window, unsigned &width, unsigned &height
 	return true;
 }
 
-// XXX: naming (pos??)
 void save_window_pos(wxTopLevelWindow *window, const std::string &name)
 {
 	const wxSize size = window->GetSize();
+	const wxPoint pos = window->GetPosition();
 	const auto maximized = window->IsMaximized() ? "1" : "0";
 
-	g_AppConfig->set((boost::format("_%1%_size") % name).str(), (boost::format("%1%;%2%") % size.GetWidth() % size.GetHeight()).str());
-	g_AppConfig->set((boost::format("_%1%_maximized") % name).str(), maximized);
-
-	{
-		const auto display_idx = wxDisplay::GetFromWindow(window);
-		if (display_idx == wxNOT_FOUND) { return; }
-
-		std::cerr << "display_idx: " << display_idx << std::endl;
-		const auto pos = window->GetPosition();
-		const auto pos_scr = window->GetScreenPosition();
-		std::cerr << "pos: " << pos.x << ", " << pos.y << std::endl;
-		std::cerr << "pos_scr: " << pos_scr.x << ", " << pos_scr.y << std::endl;
-	}
+	g_AppConfig->set((boost::format("%1%_size") % name).str(), (boost::format("%1%;%2%") % size.GetWidth() % size.GetHeight()).str());
+	g_AppConfig->set((boost::format("%1%_pos") % name).str(), (boost::format("%1%;%2%") % pos.x % pos.y).str());
+	g_AppConfig->set((boost::format("%1%_maximized") % name).str(), maximized);
 }
 
 void restore_window_pos(wxTopLevelWindow *window, const std::string &name)
@@ -1016,53 +1006,47 @@ void restore_window_pos(wxTopLevelWindow *window, const std::string &name)
 	const auto display_idx = wxDisplay::GetFromWindow(window);
 	if (display_idx == wxNOT_FOUND) { return; }
 
-	std::cerr << "display_idx: " << display_idx << std::endl;
-	const auto pos = window->GetPosition();
-	const auto pos_scr = window->GetScreenPosition();
-	std::cerr << "pos: " << pos.x << ", " << pos.y << std::endl;
-	std::cerr << "pos_scr: " << pos_scr.x << ", " << pos_scr.y << std::endl;
-
-	wxDisplay display(display_idx);
-	const auto disp_size = display.GetClientArea();
+	const auto display = wxDisplay(display_idx).GetClientArea();
 	std::vector<std::string> pair;
 
 	try {
-		const auto key_size = (boost::format("_%1%_size") % name).str();
+		// Set size first, then position
+
+		const auto key_size = (boost::format("%1%_size") % name).str();
 		if (g_AppConfig->has(key_size)) {
 			if (unescape_strings_cstyle(g_AppConfig->get(key_size), pair) && pair.size() == 2) {
 				auto width = boost::lexical_cast<int>(pair[0]);
 				auto height = boost::lexical_cast<int>(pair[1]);
 
 				// Sanitize the size on current screen
-				const wxPoint pos = window->GetPosition();
-				width = std::min(width, disp_size.GetWidth() - pos.x);
-				height = std::min(height, disp_size.GetHeight() - pos.y);
+				width = std::min(width, display.GetWidth());
+				height = std::min(height, display.GetHeight());
 
 				window->SetSize(width, height);
 			}
 		}
+
+		const auto key_pos = (boost::format("%1%_pos") % name).str();
+		if (g_AppConfig->has(key_pos)
+				&& unescape_strings_cstyle(g_AppConfig->get(key_pos), pair)
+				&& pair.size() == 2) {
+			auto pos_x = boost::lexical_cast<int>(pair[0]);
+			auto pos_y = boost::lexical_cast<int>(pair[1]);
+
+			// Sanitize the position on current screen
+			const wxSize size = window->GetSize();
+			pos_x = std::min(pos_x, display.GetWidth() - size.GetWidth());
+			pos_y = std::min(pos_y, display.GetHeight() - size.GetHeight());
+
+			window->Move(pos_x, pos_y);
+		}
 	} catch(const boost::bad_lexical_cast &) {}
 
-	const auto key_maximized = (boost::format("_%1%_maximized") % name).str();
+	// Maximizing should be the last thing to do.
+	// This ensure the size and position are sane when the user un-maximizes the window.
+	const auto key_maximized = (boost::format("%1%_maximized") % name).str();
 	if (g_AppConfig->get(key_maximized) == "1") {
-		// window->Maximize(true);
-	}
-
-	for (unsigned i = 0; i < wxDisplay::GetCount(); i++) {
-		wxDisplay display(i);
-		auto rect = display.GetClientArea();
-		std::cerr << boost::format("Display %1%: ([%2%, %3%], %4%x%5%)") % i % rect.GetX() % rect.GetY() % rect.GetWidth() % rect.GetHeight() << std::endl;
-	}
-
-	{
-		const auto display_idx = wxDisplay::GetFromWindow(window);
-		if (display_idx == wxNOT_FOUND) { return; }
-
-		std::cerr << "display_idx: " << display_idx << std::endl;
-		const auto pos = window->GetPosition();
-		const auto pos_scr = window->GetScreenPosition();
-		std::cerr << "pos: " << pos.x << ", " << pos.y << std::endl;
-		std::cerr << "pos_scr: " << pos_scr.x << ", " << pos_scr.y << std::endl;
+		window->Maximize(true);
 	}
 
 	window->Move(330, 1450);
