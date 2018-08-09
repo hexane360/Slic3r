@@ -88,9 +88,9 @@ sub new {
         $self->Fit;
         $self->SetMinSize([760, 490]);
         $self->SetSize($self->GetMinSize);
+        Slic3r::GUI::restore_window_pos($self, "main_frame");
         $self->Show;
         $self->Layout;
-        Slic3r::GUI::restore_window_pos($self, "main_frame");
     }
     
     # declare events

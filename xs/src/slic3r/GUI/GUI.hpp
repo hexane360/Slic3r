@@ -185,7 +185,9 @@ int get_export_option(wxFileDialog* dlg);
 // Returns the dimensions of the screen on which the main frame is displayed
 bool get_current_screen_size(wxWindow *window, unsigned &width, unsigned &height);
 
+// Save window position, size and maximized status into AppConfig
 void save_window_pos(wxTopLevelWindow *window, const std::string &name);
+// Restore the above
 void restore_window_pos(wxTopLevelWindow *window, const std::string &name);
 
 // Display an About dialog
