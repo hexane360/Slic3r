@@ -1639,6 +1639,7 @@ void TabPrinter::build()
 		optgroup->append_single_option_line("use_firmware_retraction");
 		optgroup->append_single_option_line("use_volumetric_e");
 		optgroup->append_single_option_line("variable_layer_height");
+		optgroup->append_single_option_line("toolchange_use_filament_gcode");
 
 	page = add_options_page(_(L("Custom G-code")), "cog.png");
 		optgroup = page->new_optgroup(_(L("Start G-code")), 0);

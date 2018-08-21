@@ -1996,6 +1996,15 @@ PrintConfigDef::PrintConfigDef()
     def->cli = "variable-layer-height!";
     def->default_value = new ConfigOptionBool(true);
 
+    def = this->add("toolchange_use_filament_gcode", coBool);
+    def->label = L("Insert custom filament gcode on toolchanges");
+    def->tooltip = L("When enabled, filament start and stop G-code will be inserted "
+                   "whenever that filament becomes active or inactive. Otherwise, filament "
+                   "G-codes will be inserted sequentially at the beginning and end of prints. "
+                   "Single Extruder Multi Material forces this setting to true.");
+    def->cli = "toolchange_use_filament_gcode!";
+    def->default_value = new ConfigOptionBool(false);
+
     def = this->add("wipe", coBools);
     def->label = L("Wipe while retracting");
     def->tooltip = L("This flag will move the nozzle while retracting to minimize the possible blob "

@@ -573,6 +573,7 @@ public:
     ConfigOptionBool                single_extruder_multi_material;
     ConfigOptionBool                single_extruder_multi_material_priming;
     ConfigOptionString              toolchange_gcode;
+    ConfigOptionBool                toolchange_use_filament_gcode;
     ConfigOptionFloat               travel_speed;
     ConfigOptionBool                use_firmware_retraction;
     ConfigOptionBool                use_relative_e_distances;
@@ -641,6 +642,7 @@ protected:
         OPT_PTR(start_gcode);
         OPT_PTR(start_filament_gcode);
         OPT_PTR(toolchange_gcode);
+        OPT_PTR(toolchange_use_filament_gcode);
         OPT_PTR(travel_speed);
         OPT_PTR(use_firmware_retraction);
         OPT_PTR(use_relative_e_distances);

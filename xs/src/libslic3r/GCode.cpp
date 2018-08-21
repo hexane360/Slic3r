@@ -741,7 +741,7 @@ void GCode::_do_export(Print &print, FILE *file, GCodePreviewData *preview_data)
     // Write the custom start G-code
     _writeln(file, start_gcode);
     // Process filament-specific gcode in extruder order.
-    if (print.config.single_extruder_multi_material) {
+    if (print.config.single_extruder_multi_material || print.config.toolchange_use_filament_gcode) {
         if (has_wipe_tower) {
             // Wipe tower will control the extruder switching, it will call the start_filament_gcode.
         } else {
@@ -941,7 +941,7 @@ void GCode::_do_export(Print &print, FILE *file, GCodePreviewData *preview_data)
         DynamicConfig config;
         config.set_key_value("layer_num", new ConfigOptionInt(m_layer_index));
         config.set_key_value("layer_z",   new ConfigOptionFloat(m_writer.get_position().z - m_config.z_offset.value));
-        if (print.config.single_extruder_multi_material) {
+        if (m_config.single_extruder_multi_material || m_config.toolchange_use_filament_gcode) {
             // Process the end_filament_gcode for the active filament only.
             _writeln(file, this->placeholder_parser_process("end_filament_gcode", print.config.end_filament_gcode.get_at(m_writer.extruder()->id()), m_writer.extruder()->id(), &config));
         } else {
@@ -2579,10 +2579,10 @@ std::string GCode::set_extruder(unsigned int extruder_id)
     m_wipe.reset_path();
     
     if (m_writer.extruder() != nullptr) {
-        // Process the custom end_filament_gcode in case of single_extruder_multi_material.
+        // Process the custom end_filament_gcode
         unsigned int        old_extruder_id     = m_writer.extruder()->id();
         const std::string  &end_filament_gcode  = m_config.end_filament_gcode.get_at(old_extruder_id);
-        if (m_config.single_extruder_multi_material && ! end_filament_gcode.empty()) {
+        if (! end_filament_gcode.empty() && (m_config.single_extruder_multi_material || m_config.toolchange_use_filament_gcode)) {
             gcode += placeholder_parser_process("end_filament_gcode", end_filament_gcode, old_extruder_id);
             check_add_eol(gcode);
         }
@@ -2605,9 +2605,9 @@ std::string GCode::set_extruder(unsigned int extruder_id)
         gcode += m_ooze_prevention.pre_toolchange(*this);
     // Append the toolchange command.
     gcode += m_writer.toolchange(extruder_id);
-    // Append the filament start G-code for single_extruder_multi_material.
+    // Append the filament start G-code
     const std::string &start_filament_gcode = m_config.start_filament_gcode.get_at(extruder_id);
-    if (m_config.single_extruder_multi_material && ! start_filament_gcode.empty()) {
+    if (! start_filament_gcode.empty() && (m_config.single_extruder_multi_material || m_config.toolchange_use_filament_gcode)) {
         // Process the start_filament_gcode for the active filament only.
         gcode += this->placeholder_parser_process("start_filament_gcode", start_filament_gcode, extruder_id);
         check_add_eol(gcode);
