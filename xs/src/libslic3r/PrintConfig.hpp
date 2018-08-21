@@ -575,6 +575,7 @@ public:
     ConfigOptionString              toolchange_gcode;
     ConfigOptionFloat               travel_speed;
     ConfigOptionBool                use_firmware_retraction;
+    ConfigOptionBool                use_firmware_swap_retraction;
     ConfigOptionBool                use_relative_e_distances;
     ConfigOptionBool                use_volumetric_e;
     ConfigOptionBool                variable_layer_height;
@@ -643,6 +644,7 @@ protected:
         OPT_PTR(toolchange_gcode);
         OPT_PTR(travel_speed);
         OPT_PTR(use_firmware_retraction);
+        OPT_PTR(use_firmware_swap_retraction);
         OPT_PTR(use_relative_e_distances);
         OPT_PTR(use_volumetric_e);
         OPT_PTR(variable_layer_height);

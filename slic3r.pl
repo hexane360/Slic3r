@@ -295,6 +295,7 @@ Usage: slic3r.pl [ OPTIONS ] [ file.stl ] [ file2.stl ] ...
                         default: $config->{gcode_flavor})
     --use-relative-e-distances Enable this to get relative E values (default: no)
     --use-firmware-retraction  Enable firmware-controlled retraction using G10/G11 (default: no)
+    --use-firmware-swap-retraction Enable firmware-controlled toolchange retraction using G10/G11 S1 (default: no)
     --use-volumetric-e  Express E in cubic millimeters and prepend M200 (default: no)
     --set-and-wait-temperatures Use M190 instead of M140 for temperature changes past the first (default: no)
     --gcode-comments    Make G-code verbose by adding comments (default: no)

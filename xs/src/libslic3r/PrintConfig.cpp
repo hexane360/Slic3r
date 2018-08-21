@@ -1971,6 +1971,13 @@ PrintConfigDef::PrintConfigDef()
     def->cli = "use-firmware-retraction!";
     def->default_value = new ConfigOptionBool(false);
 
+    def = this->add("use_firmware_swap_retraction", coBool);
+    def->label = L("Use firmware swap retraction");
+    def->tooltip = L("This experimental setting uses G10 S1 and G11 S1 commands to have the firmware "
+                   "handle multi extruder retractions. This is only supported in recent Marlin.");
+    def->cli = "use-firmware-swap-retraction!";
+    def->default_value = new ConfigOptionBool(false);
+
     def = this->add("use_relative_e_distances", coBool);
     def->label = L("Use relative E distances");
     def->tooltip = L("If your firmware requires relative E values, check this, "
@@ -2289,6 +2296,9 @@ std::string FullPrintConfig::validate()
         this->gcode_flavor.value != gcfMachinekit &&
         this->gcode_flavor.value != gcfRepetier)
         return "--use-firmware-retraction is only supported by Marlin, Smoothie, Repetier and Machinekit firmware";
+
+    if (this->use_firmware_swap_retraction.value && this->gcode_flavor.value != gcfMarlin)
+        return "--use-firmware-swap-retraction is only supported by Marlin firmware";
 
     if (this->use_firmware_retraction.value)
         for (bool wipe : this->wipe.values)

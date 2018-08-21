@@ -329,15 +329,15 @@ const std::vector<std::string>& Preset::printer_options()
     if (s_opts.empty()) {
         s_opts = {
             "bed_shape", "z_offset", "gcode_flavor", "use_relative_e_distances", "serial_port", "serial_speed", "host_type",
-            "print_host", "printhost_apikey", "printhost_cafile", "use_firmware_retraction", "use_volumetric_e", "variable_layer_height",
-            "single_extruder_multi_material", "start_gcode", "end_gcode", "before_layer_gcode", "layer_gcode", "toolchange_gcode",
-            "between_objects_gcode", "printer_vendor", "printer_model", "printer_variant", "printer_notes", "cooling_tube_retraction",
-            "cooling_tube_length", "parking_pos_retraction", "extra_loading_move", "max_print_height", "default_print_profile", "inherits",
-            "remaining_times", "silent_mode", "machine_max_acceleration_extruding", "machine_max_acceleration_retracting",
-			"machine_max_acceleration_x", "machine_max_acceleration_y", "machine_max_acceleration_z", "machine_max_acceleration_e",
-        	"machine_max_feedrate_x", "machine_max_feedrate_y", "machine_max_feedrate_z", "machine_max_feedrate_e",
-        	"machine_min_extruding_rate", "machine_min_travel_rate",
-        	"machine_max_jerk_x", "machine_max_jerk_y", "machine_max_jerk_z", "machine_max_jerk_e"
+            "print_host", "printhost_apikey", "printhost_cafile", "use_firmware_retraction", "use_firmware_swap_retraction",
+            "use_volumetric_e", "variable_layer_height", "single_extruder_multi_material", "start_gcode", "end_gcode",
+            "before_layer_gcode", "layer_gcode", "toolchange_gcode", "between_objects_gcode", "printer_vendor", "printer_model",
+            "printer_variant", "printer_notes", "cooling_tube_retraction", "cooling_tube_length", "parking_pos_retraction",
+            "extra_loading_move", "max_print_height", "default_print_profile", "inherits", "remaining_times", "silent_mode",
+            "machine_max_acceleration_extruding", "machine_max_acceleration_retracting", "machine_max_acceleration_x",
+            "machine_max_acceleration_y", "machine_max_acceleration_z", "machine_max_acceleration_e", "machine_max_feedrate_x",
+            "machine_max_feedrate_y", "machine_max_feedrate_z", "machine_max_feedrate_e", "machine_min_extruding_rate",
+            "machine_min_travel_rate", "machine_max_jerk_x", "machine_max_jerk_y", "machine_max_jerk_z", "machine_max_jerk_e"
         };
         s_opts.insert(s_opts.end(), Preset::nozzle_options().begin(), Preset::nozzle_options().end());
     }

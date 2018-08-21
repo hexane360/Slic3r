@@ -64,6 +64,7 @@ public:
     std::string retract(bool before_wipe = false);
     std::string retract_for_toolchange(bool before_wipe = false);
     std::string unretract();
+    std::string unretract_for_toolchange();
     std::string lift();
     std::string unlift();
     Pointf3     get_position() const { return m_pos; }
