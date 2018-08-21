@@ -404,11 +404,15 @@ std::string GCodeWriter::retract_for_toolchange(bool before_wipe)
 {
     double factor = before_wipe ? m_extruder->retract_before_wipe() : 1.;
     assert(factor >= 0. && factor <= 1. + EPSILON);
-    return this->_retract(
-        factor * m_extruder->retract_length_toolchange(),
-        factor * m_extruder->retract_restart_extra_toolchange(),
-        "retract for toolchange"
-    );
+    if (this->config.use_firmware_retraction && FLAVOR_IS(gcfMarlin)) {
+        return "G10 S1 ; swap retract\n";
+    } else {
+        return this->_retract(
+            factor * m_extruder->retract_length_toolchange(),
+            factor * m_extruder->retract_restart_extra_toolchange(),
+            "retract for toolchange"
+        );
+    }
 }
 
 std::string GCodeWriter::_retract(double length, double restart_extra, const std::string &comment)
@@ -447,6 +451,15 @@ std::string GCodeWriter::_retract(double length, double restart_extra, const std
         gcode << "M103 ; extruder off\n";
     
     return gcode.str();
+}
+
+std::string GCodeWriter::unretract_for_toolchange()
+{
+    if (this->config.use_firmware_retraction && FLAVOR_IS(gcfMarlin)) {
+        return "G11 S1 ; swap recover\n";
+    } else {
+        return this->unretract();
+    }
 }
 
 std::string GCodeWriter::unretract()
