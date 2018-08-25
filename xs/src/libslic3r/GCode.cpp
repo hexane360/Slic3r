@@ -189,7 +189,7 @@ std::string WipeTowerIntegration::append_tcr(GCode &gcodegen, const WipeTower::T
         wipe_tower_point_to_object_point(gcodegen, start_pos),
         erMixed,
         "Travel to a Wipe Tower");
-    gcode += gcodegen.unretract();
+    gcode += gcodegen.unretract(true); //tenative, needs testing
 
     // Let the tool change be executed by the wipe tower class.
     // Inform the G-code writer about the changes done behind its back.
@@ -2561,6 +2561,14 @@ std::string GCode::retract(bool toolchange)
     return gcode;
 }
 
+std::string GCode::unretract(bool toolchange)
+{
+    std::string gcode = m_writer.unlift();
+    gcode += toolchange ? m_writer.unretract_for_toolchange() : m_writer.unretract();
+
+    return gcode;
+}
+
 std::string GCode::set_extruder(unsigned int extruder_id)
 {
     if (!m_writer.need_toolchange(extruder_id))
@@ -2615,6 +2623,7 @@ std::string GCode::set_extruder(unsigned int extruder_id)
     // Set the new extruder to the operating temperature.
     if (m_ooze_prevention.enable)
         gcode += m_ooze_prevention.post_toolchange(*this);
+    gcode += this->unretract(true);
     
     return gcode;
 }

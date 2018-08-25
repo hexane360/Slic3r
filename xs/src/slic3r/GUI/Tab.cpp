@@ -1984,11 +1984,12 @@ void TabPrinter::update(){
 			load_config(new_conf);
 		}
 
-		get_field("retract_length_toolchange", i)->toggle(have_multiple_extruders);
+        bool firmware_swap_retract = use_firmware_retraction && is_marlin_flavor;
+		get_field("retract_length_toolchange", i)->toggle(have_multiple_extruders && !firmware_swap_retract);
 
 		bool toolchange_retraction = m_config->opt_float("retract_length_toolchange", i) > 0;
 		get_field("retract_restart_extra_toolchange", i)->toggle
-			(have_multiple_extruders && toolchange_retraction);
+			(have_multiple_extruders && toolchange_retraction && !firmware_swap_retract);
 	}
 
 	Thaw();
