@@ -78,10 +78,13 @@ sub OnInit {
     Slic3r::debugf "wxWidgets version %s, Wx version %s\n", &Wx::wxVERSION_STRING, $Wx::VERSION;
 
     # Set the Slic3r data directory at the Slic3r XS module.
+    # On all platforms: [Slic3r directory]/config (if it exists)
     # Unix: ~/.Slic3r
     # Windows: "C:\Users\username\AppData\Roaming\Slic3r" or "C:\Documents and Settings\username\Application Data\Slic3r"
     # Mac: "~/Library/Application Support/Slic3r"
-    Slic3r::set_data_dir($datadir || Wx::StandardPaths::Get->GetUserDataDir);
+    my $portable_datadir = Slic3r::resources_dir() . "/../config";
+    $portable_datadir = "" unless -d $portable_datadir;
+    Slic3r::set_data_dir($datadir || $portable_datadir || Wx::StandardPaths::Get->GetUserDataDir);
     Slic3r::GUI::set_wxapp($self);
 
     $self->{app_config} = Slic3r::GUI::AppConfig->new;
