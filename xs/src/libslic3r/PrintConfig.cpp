@@ -123,7 +123,7 @@ PrintConfigDef::PrintConfigDef()
     def->tooltip = L("Speed for printing bridges.");
     def->sidetext = L("mm/s");
     def->cli = "bridge-speed=f";
-    def->aliases.push_back("bridge_feed_rate");
+    def->aliases = { "bridge_feed_rate" };
     def->min = 0;
     def->default_value = new ConfigOptionFloat(60);
 
@@ -236,7 +236,7 @@ PrintConfigDef::PrintConfigDef()
     def->tooltip = L("Distance used for the auto-arrange feature of the plater.");
     def->sidetext = L("mm");
     def->cli = "duplicate-distance=f";
-    def->aliases.push_back("multiply_distance");
+    def->aliases = { "multiply_distance" };
     def->min = 0;
     def->default_value = new ConfigOptionFloat(6);
 
@@ -297,7 +297,7 @@ PrintConfigDef::PrintConfigDef()
     def->enum_labels.push_back(L("Archimedean Chords"));
     def->enum_labels.push_back(L("Octagram Spiral"));
     // solid_fill_pattern is an obsolete equivalent to external_fill_pattern.
-    def->aliases.push_back("solid_fill_pattern");
+    def->aliases = { "solid_fill_pattern" };
     def->default_value = new ConfigOptionEnum<InfillPattern>(ipRectilinear);
 
     def = this->add("external_perimeter_extrusion_width", coFloatOrPercent);
@@ -885,8 +885,7 @@ PrintConfigDef::PrintConfigDef()
     def->tooltip = L("Speed for printing the internal fill. Set to zero for auto.");
     def->sidetext = L("mm/s");
     def->cli = "infill-speed=f";
-    def->aliases.push_back("print_feed_rate");
-    def->aliases.push_back("infill_feed_rate");
+    def->aliases = { "print_feed_rate", "infill_feed_rate" };
     def->min = 0;
     def->default_value = new ConfigOptionFloat(80);
 
@@ -1251,7 +1250,7 @@ PrintConfigDef::PrintConfigDef()
     def->category = L("Extruders");
     def->tooltip = L("The extruder to use when printing perimeters and brim. First extruder is 1.");
     def->cli = "perimeter-extruder=i";
-    def->aliases.push_back("perimeters_extruder");
+    def->aliases = { "perimeters_extruder" };
     def->min = 1;
     def->default_value = new ConfigOptionInt(1);
 
@@ -1264,7 +1263,7 @@ PrintConfigDef::PrintConfigDef()
                    "If expressed as percentage (for example 200%) it will be computed over layer height.");
     def->sidetext = L("mm or % (leave 0 for default)");
     def->cli = "perimeter-extrusion-width=s";
-    def->aliases.push_back("perimeters_extrusion_width");
+    def->aliases = { "perimeters_extrusion_width" };
     def->default_value = new ConfigOptionFloatOrPercent(0, false);
 
     def = this->add("perimeter_speed", coFloat);
@@ -1273,7 +1272,7 @@ PrintConfigDef::PrintConfigDef()
     def->tooltip = L("Speed for perimeters (contours, aka vertical shells). Set to zero for auto.");
     def->sidetext = L("mm/s");
     def->cli = "perimeter-speed=f";
-    def->aliases.push_back("perimeter_feed_rate");
+    def->aliases = { "perimeter_feed_rate" };
     def->min = 0;
     def->default_value = new ConfigOptionFloat(60);
 
@@ -1286,7 +1285,7 @@ PrintConfigDef::PrintConfigDef()
                    "if the Extra Perimeters option is enabled.");
     def->sidetext = L("(minimum)");
     def->cli = "perimeters=i";
-    def->aliases.push_back("perimeter_offsets");
+    def->aliases = { "perimeter_offsets" };
     def->min = 0;
     def->default_value = new ConfigOptionInt(3);
 
@@ -1614,7 +1613,7 @@ PrintConfigDef::PrintConfigDef()
     def->sidetext = L("mm/s or %");
     def->cli = "solid-infill-speed=s";
     def->ratio_over = "infill_speed";
-    def->aliases.push_back("solid_infill_feed_rate");
+    def->aliases = { "solid_infill_feed_rate" };
     def->min = 0;
     def->default_value = new ConfigOptionFloatOrPercent(20, false);
 
@@ -1696,6 +1695,14 @@ PrintConfigDef::PrintConfigDef()
     def->cli = "support-material!";
     def->default_value = new ConfigOptionBool(false);
 
+    def = this->add("support_material_auto", coBool);
+    def->label = L("Auto generated supports");
+    def->category = L("Support material");
+    def->tooltip = L("If checked, supports will be generated automatically based on the overhang threshold value."\
+                     " If unchecked, supports will be generated inside the \"Support Enforcer\" volumes only.");
+    def->cli = "support-material-auto!";
+    def->default_value = new ConfigOptionBool(true);
+
     def = this->add("support_material_xy_spacing", coFloatOrPercent);
     def->label = L("XY separation between an object and its support");
     def->category = L("Support material");
@@ -1734,7 +1741,7 @@ PrintConfigDef::PrintConfigDef()
                    "for the first object layer.");
     def->sidetext = L("mm");
     def->cli = "support-material-contact-distance=f";
-    def->min = 0;
+//    def->min = 0;
     def->enum_values.push_back("0");
     def->enum_values.push_back("0.2");
 	def->enum_labels.push_back((boost::format("0 (%1%)") % L("soluble")).str());
@@ -1960,7 +1967,7 @@ PrintConfigDef::PrintConfigDef()
     def->tooltip = L("Speed for travel moves (jumps between distant extrusion points).");
     def->sidetext = L("mm/s");
     def->cli = "travel-speed=f";
-    def->aliases.push_back("travel_feed_rate");
+    def->aliases = { "travel_feed_rate" };
     def->min = 1;
     def->default_value = new ConfigOptionFloat(130);
 

@@ -267,11 +267,10 @@ add_library(libslic3r_gui STATIC
     ${LIBDIR}/slic3r/Utils/Time.hpp
     ${LIBDIR}/slic3r/Utils/HexFile.cpp
     ${LIBDIR}/slic3r/Utils/HexFile.hpp
-    ${LIBDIR}/slic3r/IProgressIndicator.hpp
+    ${LIBDIR}/slic3r/ProgressIndicator.hpp
     ${LIBDIR}/slic3r/AppController.hpp
     ${LIBDIR}/slic3r/AppController.cpp
     ${LIBDIR}/slic3r/AppControllerWx.cpp
-    ${LIBDIR}/slic3r/Strings.hpp
 )
 
 add_library(admesh STATIC
@@ -504,7 +503,7 @@ if (WIN32)
 endif ()
 
 # SLIC3R_MSVC_PDB
-if (MSVC AND SLIC3R_MSVC_PDB AND ${CMAKE_BUILD_TYPE} STREQUAL "Release")
+if (MSVC AND SLIC3R_MSVC_PDB AND "${CMAKE_BUILD_TYPE}" STREQUAL "Release")
     set_target_properties(XS PROPERTIES
         COMPILE_FLAGS "/Zi"
         LINK_FLAGS "/DEBUG /OPT:REF /OPT:ICF"
@@ -748,6 +747,7 @@ add_custom_target(pot
 set(LIBNEST2D_UNITTESTS ON CACHE BOOL "Force generating unittests for libnest2d")
 
 add_subdirectory(${LIBDIR}/libnest2d)
+target_compile_definitions(libslic3r PUBLIC -DUSE_TBB)
 target_include_directories(libslic3r PUBLIC BEFORE ${LIBNEST2D_INCLUDES})
 target_include_directories(libslic3r_gui PUBLIC BEFORE ${LIBNEST2D_INCLUDES})
 
