@@ -1640,6 +1640,7 @@ void TabPrinter::build()
 		optgroup = page->new_optgroup(_(L("Advanced")));
 		optgroup->append_single_option_line("use_relative_e_distances");
 		optgroup->append_single_option_line("use_firmware_retraction");
+		optgroup->append_single_option_line("use_firmware_swap_retraction");
 		optgroup->append_single_option_line("use_volumetric_e");
 		optgroup->append_single_option_line("variable_layer_height");
 		optgroup->append_single_option_line("toolchange_use_filament_gcode");
@@ -1987,8 +1988,14 @@ void TabPrinter::update(){
 			load_config(new_conf);
 		}
 
-        bool firmware_swap_retract = use_firmware_retraction && is_marlin_flavor;
+        bool swap_retract = m_config->opt_float("retract_length_toolchange", i) > 0;
+        bool firmware_swap_retract = m_config->opt_bool("use_firmware_swap_retraction") && is_marlin_flavor;
 		get_field("retract_length_toolchange", i)->toggle(have_multiple_extruders && !firmware_swap_retract);
+		
+		//fields which are active with either swap retraction or retraction
+		vec = { "retract_speed", "deretract_speed" };
+		for (auto el : vec)
+		    get_field(el, i)->toggle((have_retract_length && !use_firmware_retraction) || (swap_retract && !firmware_swap_retract));
 
 		bool toolchange_retraction = m_config->opt_float("retract_length_toolchange", i) > 0;
 		get_field("retract_restart_extra_toolchange", i)->toggle
