@@ -86,6 +86,7 @@ private:
 
     std::string _travel_to_z(double z, const std::string &comment);
     std::string _retract(double length, double restart_extra, const std::string &comment);
+    std::string _unretract();
 };
 
 } /* namespace Slic3r */

@@ -393,6 +393,15 @@ std::string GCodeWriter::retract(bool before_wipe)
 {
     double factor = before_wipe ? m_extruder->retract_before_wipe() : 1.;
     assert(factor >= 0. && factor <= 1. + EPSILON);
+    if (this->config.use_firmware_retraction) {
+        if (!m_extruder->retract(1, 0)) return std::string(); //don't double retract
+        if (FLAVOR_IS(gcfMachinekit)) {
+            return "G22 ; retract\n";
+        } else {
+            return ";GCodeWriter::retract\nG10 ; retract\n";
+        }
+    }
+
     return this->_retract(
         factor * m_extruder->retract_length(),
         factor * m_extruder->retract_restart_extra(),
@@ -405,7 +414,8 @@ std::string GCodeWriter::retract_for_toolchange(bool before_wipe)
     double factor = before_wipe ? m_extruder->retract_before_wipe() : 1.;
     assert(factor >= 0. && factor <= 1. + EPSILON);
     if (this->config.use_firmware_swap_retraction && FLAVOR_IS(gcfMarlin)) {
-        return "G10 S1 ; swap retract\n";
+        if (!m_extruder->retract(2, 0)) return std::string(); //don't double retract
+        return ";GCodeWriter::retract_for_toolchange\nG10 S1 ; swap retract\n";
     } else {
         return this->_retract(
             factor * m_extruder->retract_length_toolchange(),
@@ -418,12 +428,7 @@ std::string GCodeWriter::retract_for_toolchange(bool before_wipe)
 std::string GCodeWriter::_retract(double length, double restart_extra, const std::string &comment)
 {
     std::ostringstream gcode;
-    
-    /*  If firmware retraction is enabled, we use a fake value of 1
-        since we ignore the actual configured retract_length which 
-        might be 0, in which case the retraction logic gets skipped. */
-    if (this->config.use_firmware_retraction) length = 1;
-    
+
     // If we use volumetric E values we turn lengths into volumes */
     if (this->config.use_volumetric_e) {
         double d = m_extruder->filament_diameter();
@@ -431,60 +436,59 @@ std::string GCodeWriter::_retract(double length, double restart_extra, const std
         length = length * area;
         restart_extra = restart_extra * area;
     }
-    
+
     double dE = m_extruder->retract(length, restart_extra);
     if (dE != 0) {
-        if (this->config.use_firmware_retraction) {
-            if (FLAVOR_IS(gcfMachinekit))
-                gcode << "G22 ; retract\n";
-            else
-                gcode << "G10 ; retract\n";
-        } else {
-            gcode << "G1 " << m_extrusion_axis << E_NUM(m_extruder->E())
-                           << " F" << float(m_extruder->retract_speed() * 60.);
-            COMMENT(comment);
-            gcode << "\n";
-        }
+        gcode << ";GCodeWriter::_retract\nG1 " << m_extrusion_axis << E_NUM(m_extruder->E())
+                       << " F" << float(m_extruder->retract_speed() * 60.);
+        COMMENT(comment);
+        gcode << "\n";
     }
-    
+
     if (FLAVOR_IS(gcfMakerWare))
         gcode << "M103 ; extruder off\n";
-    
+
     return gcode.str();
 }
 
 std::string GCodeWriter::unretract_for_toolchange()
 {
+    if (!m_extruder->unretract()) return std::string();
+
     if (this->config.use_firmware_swap_retraction && FLAVOR_IS(gcfMarlin)) {
         return "G11 S1 ; swap recover\n";
     } else {
-        return this->unretract();
+        return this->_unretract();
     }
 }
 
 std::string GCodeWriter::unretract()
 {
+    if (!m_extruder->unretract()) return std::string();
+
+    if (this->config.use_firmware_retraction) {
+        std::string gcode;
+        if (FLAVOR_IS(gcfMachinekit))
+             gcode = "G23 ; unretract\n";
+        else
+             gcode = ";GCodeWriter::unretract()\nG11 ; unretract\n";
+        gcode += this->reset_e();
+        return gcode;
+    } else {
+        return this->_unretract();
+    }
+}
+
+std::string GCodeWriter::_unretract()
+{
     std::ostringstream gcode;
-    
     if (FLAVOR_IS(gcfMakerWare))
         gcode << "M101 ; extruder on\n";
-    
-    double dE = m_extruder->unretract();
-    if (dE != 0) {
-        if (this->config.use_firmware_retraction) {
-            if (FLAVOR_IS(gcfMachinekit))
-                 gcode << "G23 ; unretract\n";
-            else
-                 gcode << "G11 ; unretract\n";
-            gcode << this->reset_e();
-        } else {
-            // use G1 instead of G0 because G0 will blend the restart with the previous travel move
-            gcode << "G1 " << m_extrusion_axis << E_NUM(m_extruder->E())
-                           << " F" << float(m_extruder->deretract_speed() * 60.);
-            if (this->config.gcode_comments) gcode << " ; unretract";
-            gcode << "\n";
-        }
-    }
+    // use G1 instead of G0 because G0 will blend the restart with the previous travel move
+    gcode << ";GCodeWriter::_unretract()\nG1 " << m_extrusion_axis << E_NUM(m_extruder->E())
+                   << " F" << float(m_extruder->deretract_speed() * 60.);
+    if (this->config.gcode_comments) gcode << " ; unretract";
+    gcode << "\n";
     
     return gcode.str();
 }
