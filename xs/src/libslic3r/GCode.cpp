@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <cstdlib>
 #include <math.h>
+#include <iostream>
 
 #include <boost/algorithm/string.hpp>
 #include <boost/algorithm/string/find.hpp>
@@ -782,7 +783,7 @@ void GCode::_do_export(Print &print, FILE *file, GCodePreviewData *preview_data)
     // Calculate wiping points if needed
     if (print.config.ooze_prevention.value && ! print.config.single_extruder_multi_material) {
         Points skirt_points;
-        for (const ExtrusionEntity *ee : print.skirt.entities)
+        for (const ExtrusionEntity *ee : print.tallSkirt.entities)
             for (const ExtrusionPath &path : dynamic_cast<const ExtrusionLoop*>(ee)->paths)
                 append(skirt_points, path.polyline.points);
         if (! skirt_points.empty()) {
@@ -1290,10 +1291,12 @@ void GCode::process_layer(
         m_second_layer_things_done = true;
     }
 
+    bool tallSkirt = (m_skirt_done.size() >= print.config.skirt_height.value) && print.config.skirt_height.value != -1;
+    const ExtrusionEntityCollection &m_skirt = tallSkirt ? print.tallSkirt : print.skirt;
     // Extrude skirt at the print_z of the raft layers and normal object layers
     // not at the print_z of the interlaced support material layers.
     bool extrude_skirt = 
-		! print.skirt.entities.empty() &&
+		! m_skirt.entities.empty() &&
         // Not enough skirt layers printed yet.
         (m_skirt_done.size() < print.config.skirt_height.value || print.has_infinite_skirt()) &&
         // This print_z has not been extruded yet
@@ -1317,7 +1320,7 @@ void GCode::process_layer(
                     extruder_ids.front() = first_extruder_id;
                     break;
                 }
-            size_t n_loops = print.skirt.entities.size();
+            size_t n_loops = m_skirt.entities.size();
 			if (n_loops <= extruder_ids.size()) {
 				for (size_t i = 0; i < n_loops; ++i)
                     skirt_loops_per_extruder[extruder_ids[i]] = std::pair<size_t, size_t>(i, i + 1);
@@ -1494,7 +1497,7 @@ void GCode::process_layer(
                 Flow skirt_flow = print.skirt_flow();
                 for (size_t i = loops.first; i < loops.second; ++ i) {
                     // Adjust flow according to this layer's layer height.
-                    ExtrusionLoop loop = *dynamic_cast<const ExtrusionLoop*>(print.skirt.entities[i]);
+                    ExtrusionLoop loop = *dynamic_cast<const ExtrusionLoop*>(m_skirt.entities[i]);
                     Flow layer_skirt_flow(skirt_flow);
                     layer_skirt_flow.height = (float)skirt_height;
                     double mm3_per_mm = layer_skirt_flow.mm3_per_mm();

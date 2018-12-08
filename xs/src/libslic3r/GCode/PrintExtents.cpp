@@ -101,6 +101,7 @@ BoundingBoxf get_print_extrusions_extents(const Print &print)
 {
     BoundingBoxf bbox(extrusionentity_extents(print.brim));
     bbox.merge(extrusionentity_extents(print.skirt));
+    bbox.merge(extrusionentity_extents(print.tallSkirt));
     return bbox;
 }
 

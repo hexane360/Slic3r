@@ -253,7 +253,7 @@ public:
     PrintState<PrintStep, psCount>  state;
 
     // ordered collections of extrusion paths to build skirt loops and brim
-    ExtrusionEntityCollection skirt, brim;
+    ExtrusionEntityCollection skirt, tallSkirt, brim;
 
     Print() : total_used_filament(0), total_extruded_volume(0) { restart(); }
     ~Print() { clear_objects(); }

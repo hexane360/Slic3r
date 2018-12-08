@@ -1201,6 +1201,15 @@ PrintConfigDef::PrintConfigDef()
     def->cli = "ooze-prevention!";
     def->default_value = new ConfigOptionBool(false);
 
+    def = this->add("ooze_skirt_min_length", coFloat);
+    def->label = L("Ooze Skirt Minimum Length");
+    def->tooltip = L("Minimum length of skirt to use as a wall for oozing extruders. "
+                   "If set to 0, first layer skirt length will be used.");
+    def->sidetext = L("mm (leave 0 for default)");
+    def->cli = "ooze-skirt-min-length=s";
+    def->min = 0;
+    def->default_value = new ConfigOptionFloat(0);
+
     def = this->add("output_filename_format", coString);
     def->label = L("Output filename format");
     def->tooltip = L("You can use all configuration options as variables inside this template. "

@@ -185,7 +185,8 @@ bool Print::invalidate_state_by_config_options(const std::vector<t_config_option
             || opt_key == "skirt_height"
             || opt_key == "skirt_distance"
             || opt_key == "min_skirt_length"
-            || opt_key == "ooze_prevention") {
+            || opt_key == "ooze_prevention"
+            || opt_key == "ooze_skirt_min_length") {
             steps.emplace_back(psSkirt);
         } else if (opt_key == "brim_width") {
             steps.emplace_back(psBrim);
@@ -942,6 +943,13 @@ void Print::_make_skirt()
     if (this->has_infinite_skirt() && n_skirts == 0)
         n_skirts = 1;
 
+    // ooze_skirt_min_length should only apply when using ooze prevention
+    double min_length_tall = (this->config.ooze_prevention && this->extruders().size() > 1) ? this->config.ooze_skirt_min_length.value : 0;
+    double min_length = std::max(this->config.min_skirt_length.value, min_length_tall); // make base skirt at least as long as the tall skirt
+    if (min_length_tall == 0.) min_length_tall = min_length; // min_length_tall should default to min_skirt_length
+    bool add_to_tall = this->has_infinite_skirt(); // Start by duplicating regular skirt and tall skirt
+    tallSkirt.clear(); // Not sure why only tallSkirt needs this
+
     // Initial offset of the brim inner edge from the object (possible with a support & raft).
     // The skirt will touch the brim if the brim is extruded.
     Flow brim_flow = this->brim_flow();
@@ -971,26 +979,34 @@ void Print::_make_skirt()
             )));
         eloop.paths.back().polyline = loop.split_at_first_point();
         this->skirt.append(eloop);
-        if (this->config.min_skirt_length.value > 0) {
+        if (add_to_tall) this->tallSkirt.append(eloop);
+
+        if (min_length > 0) {
             // The skirt length is limited. Sum the total amount of filament length extruded, in mm.
             extruded_length[extruder_idx] += unscale(loop.length()) * extruders_e_per_mm[extruder_idx];
-            if (extruded_length[extruder_idx] < this->config.min_skirt_length.value) {
+            if (extruded_length[extruder_idx] < min_length) {
                 // Not extruded enough yet with the current extruder. Add another loop.
-                if (i == 1)
+                if (i == 1) {
                     ++ i;
+                    if (extruded_length[extruder_idx] >= min_length_tall)
+                        add_to_tall = false; // Done making tall skirt
+                }
             } else {
-                assert(extruded_length[extruder_idx] >= this->config.min_skirt_length.value);
+                assert(extruded_length[extruder_idx] >= min_length);
                 // Enough extruded with the current extruder. Extrude with the next one,
                 // until the prescribed number of skirt loops is extruded.
-                if (extruder_idx + 1 < extruders.size())
+                if (extruder_idx + 1 < extruders.size()) {
                     ++ extruder_idx;
+                    add_to_tall = true;
+                }
             }
         } else {
-            // The skirt lenght is not limited, extrude the skirt with the 1st extruder only.
+            // The skirt length is not limited, extrude the skirt with the 1st extruder only.
         }
     }
     // Brims were generated inside out, reverse to print the outmost contour first.
     this->skirt.reverse();
+    this->tallSkirt.reverse();
 }
 
 void Print::_make_brim()

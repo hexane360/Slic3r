@@ -912,6 +912,7 @@ void TabPrint::build()
 		optgroup = page->new_optgroup(_(L("Ooze prevention")));
 		optgroup->append_single_option_line("ooze_prevention");
 		optgroup->append_single_option_line("standby_temperature_delta");
+		optgroup->append_single_option_line("ooze_skirt_min_length");
 
 		optgroup = page->new_optgroup(_(L("Wipe tower")));
 		optgroup->append_single_option_line("wipe_tower");
@@ -1208,7 +1209,8 @@ void TabPrint::update()
 		get_field(el)->toggle(have_sequential_printing);
 
 	bool have_ooze_prevention = m_config->opt_bool("ooze_prevention");
-	get_field("standby_temperature_delta")->toggle(have_ooze_prevention);
+	for (auto el : { "standby_temperature_delta", "ooze_skirt_min_length" })
+	    get_field(el)->toggle(have_ooze_prevention);
 
 	bool have_wipe_tower = m_config->opt_bool("wipe_tower");
 	for (auto el : { "wipe_tower_x", "wipe_tower_y", "wipe_tower_width", "wipe_tower_rotation_angle", "wipe_tower_bridging"})

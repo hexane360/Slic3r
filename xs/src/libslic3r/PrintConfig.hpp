@@ -720,6 +720,7 @@ public:
     ConfigOptionFloats              nozzle_diameter;
     ConfigOptionBool                only_retract_when_crossing_perimeters;
     ConfigOptionBool                ooze_prevention;
+    ConfigOptionFloat               ooze_skirt_min_length;
     ConfigOptionString              output_filename_format;
     ConfigOptionFloat               perimeter_acceleration;
     ConfigOptionStrings             post_process;
@@ -791,6 +792,7 @@ protected:
         OPT_PTR(nozzle_diameter);
         OPT_PTR(only_retract_when_crossing_perimeters);
         OPT_PTR(ooze_prevention);
+        OPT_PTR(ooze_skirt_min_length);
         OPT_PTR(output_filename_format);
         OPT_PTR(perimeter_acceleration);
         OPT_PTR(post_process);

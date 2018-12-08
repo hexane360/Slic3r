@@ -3922,7 +3922,8 @@ void GLCanvas3D::_load_print_toolpaths()
     {
         total_layer_count = std::max(total_layer_count, print_object->total_layer_count());
     }
-    size_t skirt_height = m_print->has_infinite_skirt() ? total_layer_count : std::min<size_t>(m_print->config.skirt_height.value, total_layer_count);
+    size_t short_height = std::min<size_t>(m_print->config.skirt_height.value, total_layer_count);
+    size_t skirt_height = m_print->has_infinite_skirt() ? total_layer_count : short_height;
     if ((skirt_height == 0) && (m_print->config.brim_width.value > 0))
         skirt_height = 1;
 
@@ -3952,7 +3953,7 @@ void GLCanvas3D::_load_print_toolpaths()
         if (i == 0)
             _3DScene::extrusionentity_to_verts(m_print->brim, print_zs[i], Point(0, 0), volume);
 
-        _3DScene::extrusionentity_to_verts(m_print->skirt, print_zs[i], Point(0, 0), volume);
+        _3DScene::extrusionentity_to_verts((i < short_height ? m_print->skirt : m_print->tallSkirt), print_zs[i], Point(0, 0), volume);
     }
     volume.bounding_box = volume.indexed_vertex_array.bounding_box();
     volume.indexed_vertex_array.finalize_geometry(m_use_VBOs && m_initialized);
