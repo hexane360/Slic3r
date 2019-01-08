@@ -4,6 +4,7 @@
 #include "WipeTowerDialog.hpp"
 
 #include <assert.h>
+#include <string>
 
 #include <boost/lexical_cast.hpp>
 #include <boost/algorithm/string.hpp>
@@ -195,6 +196,8 @@ void change_opt_value(DynamicPrintConfig& config, const t_config_option_key& opt
 				config.set_key_value(opt_key, new ConfigOptionEnum<SeamPosition>(boost::any_cast<SeamPosition>(value)));
 			else if (opt_key.compare("host_type") == 0)
 				config.set_key_value(opt_key, new ConfigOptionEnum<PrintHostType>(boost::any_cast<PrintHostType>(value)));
+			else if (opt_key.compare("display_orientation") == 0)
+				config.set_key_value(opt_key, new ConfigOptionEnum<SLADisplayOrientation>(boost::any_cast<SLADisplayOrientation>(value)));
 			}
 			break;
 		case coPoints:{
@@ -312,6 +315,20 @@ std::string into_u8(const wxString &str)
 	return std::string(buffer_utf8.data());
 }
 
+wxString from_path(const boost::filesystem::path &path)
+{
+#ifdef _WIN32
+	return wxString(path.string<std::wstring>());
+#else
+	return wxString::FromUTF8(path.string<std::string>());
+#endif
+}
+
+boost::filesystem::path into_path(const wxString &str)
+{
+	return boost::filesystem::path(str.wx_str());
+}
+
 bool get_current_screen_size(wxWindow *window, unsigned &width, unsigned &height)
 {
 	const auto idx = wxDisplay::GetFromWindow(window);
@@ -375,7 +392,6 @@ void about()
 {
     AboutDialog dlg;
     dlg.ShowModal();
-    dlg.Destroy();
 }
 
 void desktop_open_datadir_folder()

@@ -36,7 +36,7 @@ enum GCodeFlavor {
 };
 
 enum PrintHostType {
-    htOctoPrint, htDuet,
+    htOctoPrint, htDuet, htSL1,
 };
 
 enum InfillPattern {
@@ -54,6 +54,11 @@ enum SeamPosition {
 
 enum FilamentType {
     ftPLA, ftABS, ftPET, ftHIPS, ftFLEX, ftSCAFF, ftEDGE, ftNGEN, ftPVA
+};
+
+enum SLADisplayOrientation {
+    sladoLandscape,
+    sladoPortrait
 };
 
 template<> inline const t_config_enum_values& ConfigOptionEnum<PrinterTechnology>::get_enum_values() {
@@ -145,6 +150,15 @@ template<> inline const t_config_enum_values& ConfigOptionEnum<FilamentType>::ge
         keys_map["NGEN"]            = ftNGEN;
         keys_map["PVA"]             = ftPVA;
     }
+    return keys_map;
+}
+
+template<> inline const t_config_enum_values& ConfigOptionEnum<SLADisplayOrientation>::get_enum_values() {
+    static const t_config_enum_values keys_map = {
+        { "landscape", sladoLandscape},
+        { "portrait",  sladoPortrait}
+    };
+
     return keys_map;
 }
 
@@ -615,6 +629,7 @@ public:
     ConfigOptionBool                variable_layer_height;
     ConfigOptionFloat               cooling_tube_retraction;
     ConfigOptionFloat               cooling_tube_length;
+    ConfigOptionBool                high_current_on_filament_swap;
     ConfigOptionFloat               parking_pos_retraction;
     ConfigOptionBool                remaining_times;
     ConfigOptionBool                silent_mode;
@@ -685,6 +700,7 @@ protected:
         OPT_PTR(variable_layer_height);
         OPT_PTR(cooling_tube_retraction);
         OPT_PTR(cooling_tube_length);
+        OPT_PTR(high_current_on_filament_swap);
         OPT_PTR(parking_pos_retraction);
         OPT_PTR(remaining_times);
         OPT_PTR(silent_mode);
@@ -1041,6 +1057,7 @@ public:
     ConfigOptionFloat                       display_height;
     ConfigOptionInt                         display_pixels_x;
     ConfigOptionInt                         display_pixels_y;
+    ConfigOptionEnum<SLADisplayOrientation> display_orientation;
     ConfigOptionFloats                      printer_correction;
 protected:
     void initialize(StaticCacheBase &cache, const char *base_ptr)
@@ -1052,6 +1069,7 @@ protected:
         OPT_PTR(display_height);
         OPT_PTR(display_pixels_x);
         OPT_PTR(display_pixels_y);
+        OPT_PTR(display_orientation);
         OPT_PTR(printer_correction);
     }
 };
@@ -1158,6 +1176,12 @@ public:
     // Overrides ConfigBase::def(). Static configuration definition. Any value stored into this ConfigBase shall have its definition here.
     const ConfigDef*        def() const override { return &s_def; }
     t_config_option_keys    keys() const override { return s_def.keys(); }
+
+    // Verify whether the opt_key has not been obsoleted or renamed.
+    // Both opt_key and value may be modified by handle_legacy().
+    // If the opt_key is no more valid in this version of Slic3r, opt_key is cleared by handle_legacy().
+    // handle_legacy() is called internally by set_deserialize().
+    void                    handle_legacy(t_config_option_key &opt_key, std::string &value) const override;
 
 private:
     class PrintAndCLIConfigDef : public ConfigDef

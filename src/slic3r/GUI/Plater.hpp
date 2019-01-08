@@ -55,14 +55,6 @@ private:
     int extruder_idx = -1;
 };
 
-enum ButtonAction
-{
-    baUndef,
-    baReslice,
-    baExportGcode,
-    baSendGcode
-};
-
 class Sidebar : public wxPanel
 {
     /*ConfigMenuIDs*/int    m_mode;
@@ -88,9 +80,9 @@ public:
     void                    update_objects_list_extruder_column(int extruders_count);
     void                    show_info_sizer();
     void                    show_sliced_info_sizer(const bool show);
-    void                    show_buttons(const bool show);
-    void                    show_button(ButtonAction but_action, bool show);
     void                    enable_buttons(bool enable);
+    void                    show_reslice(bool show);
+    void                    show_send(bool show);
     bool                    is_multifilament();
     void                    set_mode_value(const /*ConfigMenuIDs*/int mode) { m_mode = mode; }
 
@@ -103,6 +95,8 @@ private:
 class Plater: public wxPanel
 {
 public:
+    using fs_path = boost::filesystem::path;
+
     Plater(wxWindow *parent, MainFrame *main_frame);
     Plater(Plater &&) = delete;
     Plater(const Plater &) = delete;
@@ -125,9 +119,8 @@ public:
 
     void update();
     void select_view(const std::string& direction);
-#if ENABLE_REMOVE_TABS_FROM_PLATER
     void select_view_3D(const std::string& name);
-#endif // ENABLE_REMOVE_TABS_FROM_PLATER
+
     // Called after the Preferences dialog is closed and the program settings are saved.
     // Update the UI based on the current preferences.
     void update_ui_from_settings();

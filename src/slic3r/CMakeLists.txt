@@ -10,6 +10,8 @@ add_library(libslic3r_gui STATIC
     GUI/AboutDialog.hpp
     GUI/SysInfoDialog.cpp
     GUI/SysInfoDialog.hpp
+    GUI/KBShortcutsDialog.cpp
+    GUI/KBShortcutsDialog.hpp
     GUI/AppConfig.cpp
     GUI/AppConfig.hpp
     GUI/BackgroundSlicingProcess.cpp
@@ -103,12 +105,12 @@ add_library(libslic3r_gui STATIC
     GUI/ProgressIndicator.hpp
     GUI/ProgressStatusBar.hpp
     GUI/ProgressStatusBar.cpp
+    GUI/PrintHostDialogs.cpp
+    GUI/PrintHostDialogs.hpp
     Utils/Http.cpp
     Utils/Http.hpp
     Utils/FixModelByWin10.cpp
     Utils/FixModelByWin10.hpp
-    Utils/PrintHostSendDialog.cpp
-    Utils/PrintHostSendDialog.hpp
     Utils/OctoPrint.cpp
     Utils/OctoPrint.hpp
     Utils/Duet.cpp

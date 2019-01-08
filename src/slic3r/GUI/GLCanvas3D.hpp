@@ -20,12 +20,15 @@ class wxTimerEvent;
 class wxPaintEvent;
 class wxGLCanvas;
 
+class GLUquadric;
+typedef class GLUquadric GLUquadricObj;
 
 namespace Slic3r {
 
 class GLShader;
 class ExPolygon;
 class BackgroundSlicingProcess;
+class GCodePreviewData;
 
 namespace GUI {
 
@@ -94,18 +97,21 @@ template <size_t N> using Vec2dsEvent = ArrayEvent<Vec2d, N>;
 using Vec3dEvent = Event<Vec3d>;
 template <size_t N> using Vec3dsEvent = ArrayEvent<Vec3d, N>;
 
-#if ENABLE_REMOVE_TABS_FROM_PLATER
 wxDECLARE_EVENT(EVT_GLCANVAS_INIT, SimpleEvent);
-#endif // ENABLE_REMOVE_TABS_FROM_PLATER
 wxDECLARE_EVENT(EVT_GLCANVAS_SCHEDULE_BACKGROUND_PROCESS, SimpleEvent);
 wxDECLARE_EVENT(EVT_GLCANVAS_VIEWPORT_CHANGED, SimpleEvent);
 wxDECLARE_EVENT(EVT_GLCANVAS_RIGHT_CLICK, Vec2dEvent);
 wxDECLARE_EVENT(EVT_GLCANVAS_MODEL_UPDATE, SimpleEvent);
 wxDECLARE_EVENT(EVT_GLCANVAS_REMOVE_OBJECT, SimpleEvent);
 wxDECLARE_EVENT(EVT_GLCANVAS_ARRANGE, SimpleEvent);
+wxDECLARE_EVENT(EVT_GLCANVAS_QUESTION_MARK, SimpleEvent);
 wxDECLARE_EVENT(EVT_GLCANVAS_INCREASE_INSTANCES, Event<int>); // data: +1 => increase, -1 => decrease
 wxDECLARE_EVENT(EVT_GLCANVAS_INSTANCE_MOVED, SimpleEvent);
 wxDECLARE_EVENT(EVT_GLCANVAS_WIPETOWER_MOVED, Vec3dEvent);
+#if ENABLE_IMPROVED_SIDEBAR_OBJECTS_MANIPULATION
+wxDECLARE_EVENT(EVT_GLCANVAS_INSTANCE_ROTATED, SimpleEvent);
+wxDECLARE_EVENT(EVT_GLCANVAS_INSTANCE_SCALED, SimpleEvent);
+#endif // ENABLE_IMPROVED_SIDEBAR_OBJECTS_MANIPULATION
 wxDECLARE_EVENT(EVT_GLCANVAS_ENABLE_ACTION_BUTTONS, Event<bool>);
 wxDECLARE_EVENT(EVT_GLCANVAS_UPDATE_GEOMETRY, Vec3dsEvent<2>);
 wxDECLARE_EVENT(EVT_GLCANVAS_MOUSE_DRAGGING_FINISHED, SimpleEvent);
@@ -153,15 +159,10 @@ class GLCanvas3D
         float zoom;
         float phi;
 //        float distance;
-#if !ENABLE_CONSTRAINED_CAMERA_TARGET
-        Vec3d target;
-#endif !// ENABLE_CONSTRAINED_CAMERA_TARGET
 
     private:
-#if ENABLE_CONSTRAINED_CAMERA_TARGET
         Vec3d m_target;
         BoundingBoxf3 m_scene_box;
-#endif // ENABLE_CONSTRAINED_CAMERA_TARGET
         float m_theta;
 
     public:
@@ -172,13 +173,11 @@ class GLCanvas3D
         float get_theta() const { return m_theta; }
         void set_theta(float theta);
 
-#if ENABLE_CONSTRAINED_CAMERA_TARGET
         const Vec3d& get_target() const { return m_target; }
         void set_target(const Vec3d& target, GLCanvas3D& canvas);
 
         const BoundingBoxf3& get_scene_box() const { return m_scene_box; }
         void set_scene_box(const BoundingBoxf3& box, GLCanvas3D& canvas);
-#endif // ENABLE_CONSTRAINED_CAMERA_TARGET
     };
 
     class Bed
@@ -202,6 +201,9 @@ class GLCanvas3D
         GeometryBuffer m_gridlines;
         mutable GLTexture m_top_texture;
         mutable GLTexture m_bottom_texture;
+#if ENABLE_PRINT_BED_MODELS
+        mutable GLBed m_model;
+#endif // ENABLE_PRINT_BED_MODELS
 
     public:
         Bed();
@@ -217,26 +219,42 @@ class GLCanvas3D
         bool contains(const Point& point) const;
         Point point_projection(const Point& point) const;
 
+#if ENABLE_PRINT_BED_MODELS
+        void render(float theta, bool useVBOs) const;
+#else
         void render(float theta) const;
+#endif // ENABLE_PRINT_BED_MODELS
 
     private:
         void _calc_bounding_box();
         void _calc_triangles(const ExPolygon& poly);
         void _calc_gridlines(const ExPolygon& poly, const BoundingBox& bed_bbox);
         EType _detect_type() const;
+#if ENABLE_PRINT_BED_MODELS
+        void _render_prusa(const std::string &key, float theta, bool useVBOs) const;
+#else
         void _render_prusa(const std::string &key, float theta) const;
+#endif // ENABLE_PRINT_BED_MODELS
         void _render_custom() const;
         static bool _are_equal(const Pointfs& bed_1, const Pointfs& bed_2);
     };
 
     struct Axes
     {
+        static const double Radius;
+        static const double ArrowBaseRadius;
+        static const double ArrowLength;
         Vec3d origin;
-        float length;
+        Vec3d length;
+        GLUquadricObj* m_quadric;
 
         Axes();
+        ~Axes();
 
-        void render(bool depth_test) const;
+        void render() const;
+
+    private:
+        void render_axis(double length) const;
     };
 
     class Shader
@@ -362,14 +380,8 @@ public:
 
         enum EMode : unsigned char
         {
-#if ENABLE_MODELVOLUME_TRANSFORM
             Volume,
             Instance
-#else
-            Volume,
-            Instance,
-            Object
-#endif // ENABLE_MODELVOLUME_TRANSFORM
         };
 
         enum EType : unsigned char
@@ -392,14 +404,15 @@ public:
         struct VolumeCache
         {
         private:
-#if ENABLE_MODELVOLUME_TRANSFORM
             struct TransformCache
             {
                 Vec3d position;
                 Vec3d rotation;
                 Vec3d scaling_factor;
+                Vec3d mirror;
                 Transform3d rotation_matrix;
                 Transform3d scale_matrix;
+                Transform3d mirror_matrix;
 
                 TransformCache();
                 explicit TransformCache(const Geometry::Transformation& transform);
@@ -407,42 +420,26 @@ public:
 
             TransformCache m_volume;
             TransformCache m_instance;
-#else
-            Vec3d m_position;
-            Vec3d m_rotation;
-            Vec3d m_scaling_factor;
-            Transform3d m_rotation_matrix;
-            Transform3d m_scale_matrix;
-#endif // ENABLE_MODELVOLUME_TRANSFORM
 
         public:
-#if ENABLE_MODELVOLUME_TRANSFORM
             VolumeCache() {}
             VolumeCache(const Geometry::Transformation& volume_transform, const Geometry::Transformation& instance_transform);
-#else
-            VolumeCache();
-            VolumeCache(const Vec3d& position, const Vec3d& rotation, const Vec3d& scaling_factor);
-#endif // ENABLE_MODELVOLUME_TRANSFORM
 
-#if ENABLE_MODELVOLUME_TRANSFORM
             const Vec3d& get_volume_position() const { return m_volume.position; }
             const Vec3d& get_volume_rotation() const { return m_volume.rotation; }
             const Vec3d& get_volume_scaling_factor() const { return m_volume.scaling_factor; }
+            const Vec3d& get_volume_mirror() const { return m_volume.mirror; }
             const Transform3d& get_volume_rotation_matrix() const { return m_volume.rotation_matrix; }
             const Transform3d& get_volume_scale_matrix() const { return m_volume.scale_matrix; }
+            const Transform3d& get_volume_mirror_matrix() const { return m_volume.mirror_matrix; }
 
             const Vec3d& get_instance_position() const { return m_instance.position; }
             const Vec3d& get_instance_rotation() const { return m_instance.rotation; }
             const Vec3d& get_instance_scaling_factor() const { return m_instance.scaling_factor; }
+            const Vec3d& get_instance_mirror() const { return m_instance.mirror; }
             const Transform3d& get_instance_rotation_matrix() const { return m_instance.rotation_matrix; }
             const Transform3d& get_instance_scale_matrix() const { return m_instance.scale_matrix; }
-#else
-            const Vec3d& get_position() const { return m_position; }
-            const Vec3d& get_rotation() const { return m_rotation; }
-            const Vec3d& get_scaling_factor() const { return m_scaling_factor; }
-            const Transform3d& get_rotation_matrix() const { return m_rotation_matrix; }
-            const Transform3d& get_scale_matrix() const { return m_scale_matrix; }
-#endif // ENABLE_MODELVOLUME_TRANSFORM
+            const Transform3d& get_instance_mirror_matrix() const { return m_instance.mirror_matrix; }
         };
 
         typedef std::map<unsigned int, VolumeCache> VolumesCache;
@@ -475,10 +472,24 @@ public:
         mutable BoundingBoxf3 m_bounding_box;
         mutable bool m_bounding_box_dirty;
 
+#if ENABLE_RENDER_SELECTION_CENTER
+        GLUquadricObj* m_quadric;
+#endif // ENABLE_RENDER_SELECTION_CENTER
+#if ENABLE_SIDEBAR_VISUAL_HINTS
+        mutable GLArrow m_arrow;
+        mutable GLCurvedArrow m_curved_arrow;
+#endif // ENABLE_SIDEBAR_VISUAL_HINTS
+
     public:
         Selection();
+#if ENABLE_RENDER_SELECTION_CENTER
+        ~Selection();
+#endif // ENABLE_RENDER_SELECTION_CENTER
 
         void set_volumes(GLVolumePtrs* volumes);
+#if ENABLE_SIDEBAR_VISUAL_HINTS
+        bool init(bool useVBOs);
+#endif // ENABLE_SIDEBAR_VISUAL_HINTS
 
         Model* get_model() const { return m_model; }
         void set_model(Model* model);
@@ -509,6 +520,7 @@ public:
         bool is_wipe_tower() const { return m_type == WipeTower; }
         bool is_modifier() const { return (m_type == SingleModifier) || (m_type == MultipleModifier); }
         bool is_single_modifier() const { return m_type == SingleModifier; }
+        bool is_multiple_modifier() const { return m_type == MultipleModifier; }
         bool is_single_full_instance() const;
         bool is_multiple_full_instance() const { return m_type == MultipleFullInstance; }
         bool is_single_full_object() const { return m_type == SingleFullObject; }
@@ -520,6 +532,7 @@ public:
         bool is_from_single_object() const;
 
         bool contains_volume(unsigned int volume_idx) const { return std::find(m_list.begin(), m_list.end(), volume_idx) != m_list.end(); }
+        bool requires_uniform_scale() const;
 
         // Returns the the object id if the selection is from a single object, otherwise is -1
         int get_object_idx() const;
@@ -539,7 +552,7 @@ public:
 
         void start_dragging();
 
-        void translate(const Vec3d& displacement);
+        void translate(const Vec3d& displacement, bool local = false);
         void rotate(const Vec3d& rotation, bool local);
         void flattening_rotate(const Vec3d& normal);
         void scale(const Vec3d& scale, bool local);
@@ -551,6 +564,14 @@ public:
         void erase();
 
         void render() const;
+#if ENABLE_RENDER_SELECTION_CENTER
+        void render_center() const;
+#endif // ENABLE_RENDER_SELECTION_CENTER
+#if ENABLE_SIDEBAR_VISUAL_HINTS
+        void render_sidebar_hints(const std::string& sidebar_field) const;
+#endif // ENABLE_SIDEBAR_VISUAL_HINTS
+
+        bool requires_local_axes() const;
 
     private:
         void _update_valid();
@@ -566,7 +587,17 @@ public:
         void _render_selected_volumes() const;
         void _render_synchronized_volumes() const;
         void _render_bounding_box(const BoundingBoxf3& box, float* color) const;
-        void _synchronize_unselected_instances();
+#if ENABLE_SIDEBAR_VISUAL_HINTS
+        void _render_sidebar_position_hints(const std::string& sidebar_field) const;
+        void _render_sidebar_rotation_hints(const std::string& sidebar_field) const;
+        void _render_sidebar_scale_hints(const std::string& sidebar_field) const;
+        void _render_sidebar_size_hints(const std::string& sidebar_field) const;
+        void _render_sidebar_position_hint(Axis axis) const;
+        void _render_sidebar_rotation_hint(Axis axis) const;
+        void _render_sidebar_scale_hint(Axis axis) const;
+        void _render_sidebar_size_hint(Axis axis, double length) const;
+#endif // ENABLE_SIDEBAR_VISUAL_HINTS
+        void _synchronize_unselected_instances(bool including_z = false);
         void _synchronize_unselected_volumes();
 #if ENABLE_ENSURE_ON_BED_WHILE_SCALING
         void _ensure_on_bed();
@@ -601,8 +632,8 @@ public:
 private:
     class Gizmos
     {
-        static const float OverlayTexturesScale;
-        static const float OverlayOffsetX;
+        static const float OverlayIconsScale;
+        static const float OverlayBorder;
         static const float OverlayGapY;
 
     public:
@@ -622,6 +653,7 @@ private:
         bool m_enabled;
         typedef std::map<EType, GLGizmoBase*> GizmosMap;
         GizmosMap m_gizmos;
+        BackgroundTexture m_background_texture;
         EType m_current;
 
     public:
@@ -690,13 +722,21 @@ private:
         void _render_current_gizmo(const Selection& selection) const;
 
         float _get_total_overlay_height() const;
+        float _get_total_overlay_width() const;
+
         GLGizmoBase* _get_current() const;
     };
 
     struct SlaCap
     {
+        struct Triangles
+        {
+            Pointf3s object;
+            Pointf3s suppports;
+        };
+        typedef std::map<unsigned int, Triangles> ObjectIdToTrianglesMap;
         double z;
-        Pointf3s triangles;
+        ObjectIdToTrianglesMap triangles;
 
         SlaCap() { reset(); }
         void reset() { z = DBL_MAX; triangles.clear(); }
@@ -727,7 +767,8 @@ private:
         static const int Px_Square_Contour = 1;
         static const int Px_Border = Px_Square / 2;
         static const unsigned char Squares_Border_Color[3];
-        static const unsigned char Background_Color[3];
+        static const unsigned char Default_Background_Color[3];
+        static const unsigned char Error_Background_Color[3];
         static const unsigned char Opacity;
 
         int m_original_width;
@@ -736,7 +777,7 @@ private:
     public:
         LegendTexture();
 
-        bool generate(const GCodePreviewData& preview_data, const std::vector<float>& tool_colors, const GLCanvas3D& canvas);
+        bool generate(const GCodePreviewData& preview_data, const std::vector<float>& tool_colors, const GLCanvas3D& canvas, bool use_error_colors);
 
         void render(const GLCanvas3D& canvas) const;
     };
@@ -755,12 +796,11 @@ private:
     Mouse m_mouse;
     mutable Gizmos m_gizmos;
     mutable GLToolbar m_toolbar;
-#if ENABLE_REMOVE_TABS_FROM_PLATER
-    GLRadioToolbar* m_view_toolbar;
-#endif // ENABLE_REMOVE_TABS_FROM_PLATER
+    GLToolbar* m_view_toolbar;
     ClippingPlane m_clipping_planes[2];
     bool m_use_clipping_planes;
     mutable SlaCap m_sla_caps[2];
+    std::string m_sidebar_field;
 
     mutable GLVolumeCollection m_volumes;
     Selection m_selection;
@@ -780,7 +820,6 @@ private:
     bool m_legend_texture_enabled;
     bool m_picking_enabled;
     bool m_moving_enabled;
-    bool m_shader_enabled;
     bool m_dynamic_background_enabled;
     bool m_multisample_allowed;
     bool m_regenerate_volumes;
@@ -796,10 +835,6 @@ private:
     wxWindow *m_external_gizmo_widgets_parent;
 #endif // not ENABLE_IMGUI
 
-#if !ENABLE_CONSTRAINED_CAMERA_TARGET
-    void viewport_changed();
-#endif // !ENABLE_CONSTRAINED_CAMERA_TARGET
-
 public:
     GLCanvas3D(wxGLCanvas* canvas);
     ~GLCanvas3D();
@@ -810,9 +845,7 @@ public:
 
     wxGLCanvas* get_wxglcanvas() { return m_canvas; }
 
-#if ENABLE_REMOVE_TABS_FROM_PLATER
-    void set_view_toolbar(GLRadioToolbar* toolbar) { m_view_toolbar = toolbar; }
-#endif // ENABLE_REMOVE_TABS_FROM_PLATER
+    void set_view_toolbar(GLToolbar* toolbar) { m_view_toolbar = toolbar; }
 
     bool init(bool useVBOs, bool use_legacy_opengl);
     void post_event(wxEvent &&event);
@@ -825,11 +858,7 @@ public:
 
     unsigned int get_volumes_count() const;
     void reset_volumes();
-#if ENABLE_REMOVE_TABS_FROM_PLATER
     int check_volumes_outside_state() const;
-#else
-    int check_volumes_outside_state(const DynamicPrintConfig* config) const;
-#endif // ENABLE_REMOVE_TABS_FROM_PLATER
 
     void set_config(DynamicPrintConfig* config);
     void set_process(BackgroundSlicingProcess* process);
@@ -843,8 +872,7 @@ public:
     // fills the m_bed.m_grid_lines and sets m_bed.m_origin.
     // Sets m_bed.m_polygon to limit the object placement.
     void set_bed_shape(const Pointfs& shape);
-
-    void set_axes_length(float length);
+    void set_bed_axes_length(double length);
 
     void set_clipping_plane(unsigned int id, const ClippingPlane& plane)
     {
@@ -861,9 +889,7 @@ public:
     float get_camera_zoom() const;
 
     BoundingBoxf3 volumes_bounding_box() const;
-#if ENABLE_CONSTRAINED_CAMERA_TARGET
     BoundingBoxf3 scene_bounding_box() const;
-#endif // ENABLE_CONSTRAINED_CAMERA_TARGET
 
     bool is_layers_editing_enabled() const;
     bool is_layers_editing_allowed() const;
@@ -877,7 +903,6 @@ public:
     void enable_moving(bool enable);
     void enable_gizmos(bool enable);
     void enable_toolbar(bool enable);
-    void enable_shader(bool enable);
     void enable_force_zoom_to_bed(bool enable);
     void enable_dynamic_background(bool enable);
     void allow_multisample(bool allow);
@@ -887,9 +912,7 @@ public:
 
     void zoom_to_bed();
     void zoom_to_volumes();
-#if ENABLE_MODIFIED_CAMERA_TARGET
     void zoom_to_selection();
-#endif // ENABLE_MODIFIED_CAMERA_TARGET
     void select_view(const std::string& direction);
     void set_viewport_from_scene(const GLCanvas3D& other);
 
@@ -955,9 +978,9 @@ public:
 
     void update_gizmos_on_off_state();
 
-#if ENABLE_CONSTRAINED_CAMERA_TARGET
     void viewport_changed();
-#endif // ENABLE_CONSTRAINED_CAMERA_TARGET
+
+    void handle_sidebar_focus_event(const std::string& opt_key, bool focus_on);
 
 private:
     bool _is_shown_on_screen() const;
@@ -982,9 +1005,12 @@ private:
     void _picking_pass() const;
     void _render_background() const;
     void _render_bed(float theta) const;
-    void _render_axes(bool depth_test) const;
+    void _render_axes() const;
     void _render_objects() const;
     void _render_selection() const;
+#if ENABLE_RENDER_SELECTION_CENTER
+    void _render_selection_center() const;
+#endif // ENABLE_RENDER_SELECTION_CENTER
     void _render_warning_texture() const;
     void _render_legend_texture() const;
     void _render_layer_editing_overlay() const;
@@ -992,13 +1018,14 @@ private:
     void _render_current_gizmo() const;
     void _render_gizmos_overlay() const;
     void _render_toolbar() const;
-#if ENABLE_REMOVE_TABS_FROM_PLATER
     void _render_view_toolbar() const;
-#endif // ENABLE_REMOVE_TABS_FROM_PLATER
 #if ENABLE_SHOW_CAMERA_TARGET
     void _render_camera_target() const;
 #endif // ENABLE_SHOW_CAMERA_TARGET
     void _render_sla_slices() const;
+#if ENABLE_SIDEBAR_VISUAL_HINTS
+    void _render_selection_sidebar_hints() const;
+#endif // ENABLE_SIDEBAR_VISUAL_HINTS
 
     void _update_volumes_hover_state() const;
     void _update_gizmos_data();
@@ -1058,14 +1085,11 @@ private:
 
     bool _is_any_volume_outside() const;
 
-#if ENABLE_REMOVE_TABS_FROM_PLATER
     void _resize_toolbars() const;
-#else
-    void _resize_toolbar() const;
-#endif // ENABLE_REMOVE_TABS_FROM_PLATER
 
     static std::vector<float> _parse_colors(const std::vector<std::string>& colors);
 
+public:
     const Print* fff_print() const;
     const SLAPrint* sla_print() const;
 };

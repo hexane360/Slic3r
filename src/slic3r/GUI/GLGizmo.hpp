@@ -403,6 +403,8 @@ private:
 
     // This holds information to decide whether recalculation is necessary:
     std::vector<Transform3d> m_volumes_matrices;
+    std::vector<ModelVolume::Type> m_volumes_types;
+    Vec3d m_first_instance_scale;
 
     std::vector<PlaneData> m_planes;
     mutable Vec3d m_starting_center;
@@ -436,7 +438,6 @@ protected:
 class GLGizmoSlaSupports : public GLGizmoBase
 {
 private:
-    SLAAutoSupports* m_sas = nullptr;
     ModelObject* m_model_object = nullptr;
 #if ENABLE_SLA_SUPPORT_GIZMO_MOD
     ModelObject* m_old_model_object = nullptr;

@@ -15,13 +15,17 @@
 #include "libslic3r/SLAPrint.hpp"
 #include "libslic3r/Utils.hpp"
 #include "libslic3r/GCode/PostProcessor.hpp"
+#include "libslic3r/GCode/PreviewData.hpp"
 
-//#undef NDEBUG
 #include <cassert>
 #include <stdexcept>
+#include <cctype>
+#include <algorithm>
 
 #include <boost/format.hpp>
 #include <boost/filesystem/path.hpp>
+#include <boost/filesystem.hpp>
+#include <boost/log/trivial.hpp>
 #include <boost/nowide/cstdio.hpp>
 
 namespace Slic3r {
@@ -72,11 +76,15 @@ void BackgroundSlicingProcess::process_fff()
 	if (this->set_step_started(bspsGCodeFinalize)) {
 	    if (! m_export_path.empty()) {
 	    	//FIXME localize the messages
-		    if (copy_file(m_temp_output_path, m_export_path) != 0)
+	    	// Perform the final post-processing of the export path by applying the print statistics over the file name.
+	    	std::string export_path = m_fff_print->print_statistics().finalize_output_path(m_export_path);
+		    if (copy_file(m_temp_output_path, export_path) != 0)
 	    		throw std::runtime_error("Copying of the temporary G-code to the output G-code failed");
 	    	m_print->set_status(95, "Running post-processing scripts");
-	    	run_post_process_scripts(m_export_path, m_fff_print->config());
-	    	m_print->set_status(100, "G-code file exported to " + m_export_path);
+	    	run_post_process_scripts(export_path, m_fff_print->config());
+	    	m_print->set_status(100, "G-code file exported to " + export_path);
+	    } else if (! m_upload_job.empty()) {
+			prepare_upload();
 	    } else {
 	    	m_print->set_status(100, "Slicing complete");
 	    }
@@ -102,8 +110,15 @@ public:
         zipstream(zipfile),
         pngstream(zipstream)
     {
-        if(!zipfile.IsOk())
+        if(!is_ok())
             throw std::runtime_error("Cannot create zip file.");
+    }
+
+    ~LayerWriter() {
+        // In case of an error (disk space full) zipstream destructor would
+        // crash.
+        pngstream.clear();
+        zipstream.CloseEntry();
     }
 
     inline void next_entry(const std::string& fname) {
@@ -111,11 +126,15 @@ public:
     }
 
     inline std::string get_name() const {
-        return fpath.GetName().ToStdString();
+        return fpath.GetName().ToUTF8().data();
     }
 
     template<class T> inline LayerWriter& operator<<(const T& arg) {
         pngstream << arg; return *this;
+    }
+
+    bool is_ok() const {
+        return pngstream.good() && zipstream.IsOk() && zipfile.IsOk();
     }
 
     inline void close() {
@@ -132,6 +151,10 @@ void BackgroundSlicingProcess::process_sla()
         if (! m_export_path.empty()) {
             m_sla_print->export_raster<SLAZipFmt>(m_export_path);
             m_print->set_status(100, "Zip file exported to " + m_export_path);
+        } else if (! m_upload_job.empty()) {
+            prepare_upload();
+        } else {
+            m_print->set_status(100, "Slicing complete");
         }
         this->set_step_done(bspsGCodeFinalize);
     }
@@ -329,6 +352,13 @@ Print::ApplyStatus BackgroundSlicingProcess::apply(const Model &model, const Dyn
 	assert(m_print != nullptr);
 	assert(config.opt_enum<PrinterTechnology>("printer_technology") == m_print->technology());
 	Print::ApplyStatus invalidated = m_print->apply(model, config);
+	if ((invalidated & PrintBase::APPLY_STATUS_INVALIDATED) != 0 && m_print->technology() == ptFFF &&
+		m_gcode_preview_data != nullptr && ! this->m_fff_print->is_step_done(psGCodeExport)) {
+		// Some FFF status was invalidated, and the G-code was not exported yet.
+		// Let the G-code preview UI know that the final G-code preview is not valid.
+		// In addition, this early memory deallocation reduces memory footprint.
+		m_gcode_preview_data->reset();
+	}
 	return invalidated;
 }
 
@@ -343,6 +373,19 @@ void BackgroundSlicingProcess::schedule_export(const std::string &path)
 	tbb::mutex::scoped_lock lock(m_print->state_mutex());
 	this->invalidate_step(bspsGCodeFinalize);
 	m_export_path = path;
+}
+
+void BackgroundSlicingProcess::schedule_upload(Slic3r::PrintHostJob upload_job)
+{
+	assert(m_export_path.empty());
+	if (! m_export_path.empty())
+		return;
+
+	// Guard against entering the export step before changing the export path.
+	tbb::mutex::scoped_lock lock(m_print->state_mutex());
+	this->invalidate_step(bspsGCodeFinalize);
+	m_export_path.clear();
+	m_upload_job = std::move(upload_job);
 }
 
 void BackgroundSlicingProcess::reset_export()
@@ -380,6 +423,37 @@ bool BackgroundSlicingProcess::invalidate_step(BackgroundSlicingProcessStep step
 bool BackgroundSlicingProcess::invalidate_all_steps()
 { 
 	return m_step_state.invalidate_all([this](){ this->stop_internal(); });
+}
+
+void BackgroundSlicingProcess::prepare_upload()
+{
+	// A print host upload job has been scheduled, enqueue it to the printhost job queue
+
+	// XXX: is fs::path::string() right?
+
+	// Generate a unique temp path to which the gcode/zip file is copied/exported
+	boost::filesystem::path source_path = boost::filesystem::temp_directory_path()
+		/ boost::filesystem::unique_path(".printhost.%%%%-%%%%-%%%%-%%%%.gcode");
+
+	if (m_print == m_fff_print) {
+		m_print->set_status(95, "Running post-processing scripts");
+		run_post_process_scripts(source_path.string(), m_fff_print->config());
+
+		if (copy_file(m_temp_output_path, source_path.string()) != 0) {
+			throw std::runtime_error("Copying of the temporary G-code to the output G-code failed");
+		}
+
+		m_upload_job.upload_data.upload_path = m_fff_print->print_statistics().finalize_output_path(m_upload_job.upload_data.upload_path.string());
+	} else {
+		m_sla_print->export_raster<SLAZipFmt>(source_path.string());
+		// TODO: Also finalize upload path like with FFF when there are statistics for SLA print
+	}
+
+	m_print->set_status(100, (boost::format("Scheduling upload to `%1%`. See Window -> Print Host Upload Queue") % m_upload_job.printhost->get_host()).str());
+
+	m_upload_job.upload_data.source_path = std::move(source_path);
+
+	GUI::wxGetApp().printhost_job_queue().enqueue(std::move(m_upload_job));
 }
 
 }; // namespace Slic3r

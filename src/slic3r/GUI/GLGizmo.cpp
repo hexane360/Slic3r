@@ -8,6 +8,7 @@
 #include "libslic3r/Geometry.hpp"
 #include "libslic3r/Utils.hpp"
 #include "libslic3r/SLA/SLASupportTree.hpp"
+#include "libslic3r/SLAPrint.hpp"
 
 #include <cstdio>
 #include <numeric>
@@ -859,14 +860,10 @@ void GLGizmoScale3D::on_render(const GLCanvas3D::Selection& selection) const
     bool single_selection = single_instance || single_volume;
 
     Vec3f scale = 100.0f * Vec3f::Ones();
-#if ENABLE_MODELVOLUME_TRANSFORM
     if (single_instance)
         scale = 100.0f * selection.get_volume(*selection.get_volume_idxs().begin())->get_instance_scaling_factor().cast<float>();
     else if (single_volume)
         scale = 100.0f * selection.get_volume(*selection.get_volume_idxs().begin())->get_volume_scaling_factor().cast<float>();
-#else
-    Vec3f scale = single_instance ? 100.0f * selection.get_volume(*selection.get_volume_idxs().begin())->get_scaling_factor().cast<float>() : 100.0f * m_scale.cast<float>();
-#endif // ENABLE_MODELVOLUME_TRANSFORM
 
     if ((single_selection && ((m_hover_id == 0) || (m_hover_id == 1))) || m_grabbers[0].dragging || m_grabbers[1].dragging)
         set_tooltip("X: " + format(scale(0), 4) + "%");
@@ -914,37 +911,22 @@ void GLGizmoScale3D::on_render(const GLCanvas3D::Selection& selection) const
 
         // gets transform from first selected volume
         const GLVolume* v = selection.get_volume(*idxs.begin());
-#if ENABLE_MODELVOLUME_TRANSFORM
         transform = v->get_instance_transformation().get_matrix();
         // gets angles from first selected volume
         angles = v->get_instance_rotation();
         // consider rotation+mirror only components of the transform for offsets
         offsets_transform = Geometry::assemble_transform(Vec3d::Zero(), angles, Vec3d::Ones(), v->get_instance_mirror());
         grabber_size = v->get_instance_transformation().get_matrix(true, true, false, true) * box.size();
-#else
-        transform = v->world_matrix().cast<double>();
-        // gets angles from first selected volume
-        angles = v->get_rotation();
-        // consider rotation+mirror only components of the transform for offsets
-        offsets_transform = Geometry::assemble_transform(Vec3d::Zero(), angles, Vec3d::Ones(), v->get_mirror());
-#endif // ENABLE_MODELVOLUME_TRANSFORM
     }
     else if (single_volume)
     {
         const GLVolume* v = selection.get_volume(*selection.get_volume_idxs().begin());
         box = v->bounding_box;
-#if ENABLE_MODELVOLUME_TRANSFORM
         transform = v->world_matrix();
         angles = Geometry::extract_euler_angles(transform);
         // consider rotation+mirror only components of the transform for offsets
         offsets_transform = Geometry::assemble_transform(Vec3d::Zero(), angles, Vec3d::Ones(), v->get_instance_mirror());
         grabber_size = v->get_volume_transformation().get_matrix(true, true, false, true) * box.size();
-#else
-        transform = v->world_matrix().cast<double>();
-        angles = Geometry::extract_euler_angles(transform);
-        // consider rotation+mirror only components of the transform for offsets
-        offsets_transform = Geometry::assemble_transform(Vec3d::Zero(), angles, Vec3d::Ones(), v->get_mirror());
-#endif // ENABLE_MODELVOLUME_TRANSFORM
     }
     else
     {
@@ -1292,9 +1274,11 @@ void GLGizmoMove3D::on_render(const GLCanvas3D::Selection& selection) const
 
         // draw grabbers
         render_grabbers(box);
-        render_grabber_extension(X, box, false);
-        render_grabber_extension(Y, box, false);
-        render_grabber_extension(Z, box, false);
+        for (unsigned int i = 0; i < 3; ++i)
+        {
+            if (m_grabbers[i].enabled)
+                render_grabber_extension((Axis)i, box, false);
+        }
     }
     else
     {
@@ -1463,6 +1447,7 @@ void GLGizmoFlatten::on_render(const GLCanvas3D::Selection& selection) const
         const Transform3d& m = selection.get_volume(*selection.get_volume_idxs().begin())->get_instance_transformation().get_matrix();
         ::glPushMatrix();
         ::glMultMatrixd(m.data());
+        ::glTranslatef(0.f, 0.f, selection.get_volume(*selection.get_volume_idxs().begin())->get_sla_shift_z());
         for (int i = 0; i < (int)m_planes.size(); ++i)
         {
             if (i == m_hover_id)
@@ -1494,6 +1479,7 @@ void GLGizmoFlatten::on_render_for_picking(const GLCanvas3D::Selection& selectio
         const Transform3d& m = selection.get_volume(*selection.get_volume_idxs().begin())->get_instance_transformation().get_matrix();
         ::glPushMatrix();
         ::glMultMatrixd(m.data());
+        ::glTranslatef(0.f, 0.f, selection.get_volume(*selection.get_volume_idxs().begin())->get_sla_shift_z());
         for (int i = 0; i < (int)m_planes.size(); ++i)
         {
             ::glColor3f(1.0f, 1.0f, picking_color_component(i));
@@ -1524,7 +1510,6 @@ void GLGizmoFlatten::update_planes()
 {
     TriangleMesh ch;
     for (const ModelVolume* vol : m_model_object->volumes)
-#if ENABLE_MODELVOLUME_TRANSFORM
     {
         if (vol->type() != ModelVolume::Type::MODEL_PART)
             continue;
@@ -1532,18 +1517,17 @@ void GLGizmoFlatten::update_planes()
         vol_ch.transform(vol->get_matrix());
         ch.merge(vol_ch);
     }
-#else
-        ch.merge(vol->get_convex_hull());
-#endif // ENABLE_MODELVOLUME_TRANSFORM
 
     ch = ch.convex_hull_3d();
-
-    const Vec3d& bb_size = ch.bounding_box().size();
-    double min_bb_face_area = std::min(bb_size(0) * bb_size(1), std::min(bb_size(0) * bb_size(2), bb_size(1) * bb_size(2)));
-
     m_planes.clear();
+    const Transform3d& inst_matrix = m_model_object->instances.front()->get_matrix();
 
-    // Now we'll go through all the facets and append Points of facets sharing the same normal:
+    // Following constants are used for discarding too small polygons.
+    const float minimal_area = 5.f; // in square mm (world coordinates)
+    const float minimal_side = 1.f; // mm
+
+    // Now we'll go through all the facets and append Points of facets sharing the same normal.
+    // This part is still performed in mesh coordinate system.
     const int num_of_facets = ch.stl.stats.number_of_facets;
     std::vector<int>  facet_queue(num_of_facets, 0);
     std::vector<bool> facet_visited(num_of_facets, false);
@@ -1566,7 +1550,7 @@ void GLGizmoFlatten::update_planes()
         while (facet_queue_cnt > 0) {
             int facet_idx = facet_queue[-- facet_queue_cnt];
             const stl_normal& this_normal = ch.stl.facet_start[facet_idx].normal;
-            if (std::abs(this_normal(0) - (*normal_ptr)(0)) < 0.001 && std::abs(this_normal(1) - (*normal_ptr)(1)) < 0.001 && std::abs(this_normal(2) - (*normal_ptr)(2)) < 0.001) {
+            if (this_normal.isApprox(*normal_ptr)) {
                 stl_vertex* first_vertex = ch.stl.facet_start[facet_idx].vertex;
                 for (int j=0; j<3; ++j)
                     m_planes.back().vertices.emplace_back((double)first_vertex[j](0), (double)first_vertex[j](1), (double)first_vertex[j](2));
@@ -1579,63 +1563,74 @@ void GLGizmoFlatten::update_planes()
                 }
             }
         }
-        m_planes.back().normal = Vec3d((double)(*normal_ptr)(0), (double)(*normal_ptr)(1), (double)(*normal_ptr)(2));
+        m_planes.back().normal = normal_ptr->cast<double>();
 
-        // if this is a just a very small triangle, remove it to speed up further calculations (it would be rejected anyway):
+        // Now we'll transform all the points into world coordinates, so that the areas, angles and distances
+        // make real sense.
+        m_planes.back().vertices = transform(m_planes.back().vertices, inst_matrix);
+
+        // if this is a just a very small triangle, remove it to speed up further calculations (it would be rejected later anyway):
         if (m_planes.back().vertices.size() == 3 &&
-            ((m_planes.back().vertices[0] - m_planes.back().vertices[1]).norm() < 1.0
-            || (m_planes.back().vertices[0] - m_planes.back().vertices[2]).norm() < 1.0
-            || (m_planes.back().vertices[1] - m_planes.back().vertices[2]).norm() < 1.0))
+            ((m_planes.back().vertices[0] - m_planes.back().vertices[1]).norm() < minimal_side
+            || (m_planes.back().vertices[0] - m_planes.back().vertices[2]).norm() < minimal_side
+            || (m_planes.back().vertices[1] - m_planes.back().vertices[2]).norm() < minimal_side))
             m_planes.pop_back();
     }
-
-    const float minimal_area = 0.01f * (float)min_bb_face_area;
 
     // Now we'll go through all the polygons, transform the points into xy plane to process them:
     for (unsigned int polygon_id=0; polygon_id < m_planes.size(); ++polygon_id) {
         Pointf3s& polygon = m_planes[polygon_id].vertices;
         const Vec3d& normal = m_planes[polygon_id].normal;
 
+        // let's transform the normal accodring to the instance matrix:
+        Geometry::Transformation t(inst_matrix);
+        Vec3d scaling = t.get_scaling_factor();
+        t.set_scaling_factor(Vec3d(1./(scaling(0)*scaling(0)), 1./(scaling(0)*scaling(0)), 1./(scaling(0)*scaling(0))));
+        Vec3d normal_transformed = t.get_matrix() * normal;
+
         // We are going to rotate about z and y to flatten the plane
         Eigen::Quaterniond q;
         Transform3d m = Transform3d::Identity();
-        m.matrix().block(0, 0, 3, 3) = q.setFromTwoVectors(normal, Vec3d::UnitZ()).toRotationMatrix();
+        m.matrix().block(0, 0, 3, 3) = q.setFromTwoVectors(normal_transformed, Vec3d::UnitZ()).toRotationMatrix();
         polygon = transform(polygon, m);
 
-        polygon = Slic3r::Geometry::convex_hull(polygon); // To remove the inner points
+        // Now to remove the inner points. We'll misuse Geometry::convex_hull for that, but since
+        // it works in fixed point representation, we will rescale the polygon to avoid overflows.
+        // And yes, it is a nasty thing to do. Whoever has time is free to refactor.
+        Vec3d bb_size = BoundingBoxf3(polygon).size();
+        float sf = std::min(1./bb_size(0), 1./bb_size(1));
+        Transform3d tr = Geometry::assemble_transform(Vec3d::Zero(), Vec3d::Zero(), Vec3d(sf, sf, 1.f));
+        polygon = transform(polygon, tr);
+        polygon = Slic3r::Geometry::convex_hull(polygon);
+        polygon = transform(polygon, tr.inverse());
 
-        // We will calculate area of the polygons and discard ones that are too small
-        // The limit is more forgiving in case the normal is in the direction of the coordinate axes
-        float area_threshold = (std::abs(normal(0)) > 0.999f || std::abs(normal(1)) > 0.999f || std::abs(normal(2)) > 0.999f) ? minimal_area : 10.0f * minimal_area;
+        // Calculate area of the polygons and discard ones that are too small
         float& area = m_planes[polygon_id].area;
         area = 0.f;
         for (unsigned int i = 0; i < polygon.size(); i++) // Shoelace formula
             area += polygon[i](0)*polygon[i + 1 < polygon.size() ? i + 1 : 0](1) - polygon[i + 1 < polygon.size() ? i + 1 : 0](0)*polygon[i](1);
         area = 0.5f * std::abs(area);
-        if (area < area_threshold) {
-            m_planes.erase(m_planes.begin()+(polygon_id--));
-            continue;
-        }
 
-        // We check the inner angles and discard polygons with angles smaller than the following threshold
-        const double angle_threshold = ::cos(10.0 * (double)PI / 180.0);
         bool discard = false;
+        if (area < minimal_area)
+            discard = true;
+        else {
+            // We also check the inner angles and discard polygons with angles smaller than the following threshold
+            const double angle_threshold = ::cos(10.0 * (double)PI / 180.0);
 
-        for (unsigned int i = 0; i < polygon.size(); ++i)
-        {
-            const Vec3d& prec = polygon[(i == 0) ? polygon.size() - 1 : i - 1];
-            const Vec3d& curr = polygon[i];
-            const Vec3d& next = polygon[(i == polygon.size() - 1) ? 0 : i + 1];
+            for (unsigned int i = 0; i < polygon.size(); ++i) {
+                const Vec3d& prec = polygon[(i == 0) ? polygon.size() - 1 : i - 1];
+                const Vec3d& curr = polygon[i];
+                const Vec3d& next = polygon[(i == polygon.size() - 1) ? 0 : i + 1];
 
-            if ((prec - curr).normalized().dot((next - curr).normalized()) > angle_threshold)
-            {
-                discard = true;
-                break;
+                if ((prec - curr).normalized().dot((next - curr).normalized()) > angle_threshold) {
+                    discard = true;
+                    break;
+                }
             }
         }
 
-        if (discard)
-        {
+        if (discard) {
             m_planes.erase(m_planes.begin() + (polygon_id--));
             continue;
         }
@@ -1685,13 +1680,17 @@ void GLGizmoFlatten::update_planes()
             polygon = points_out; // replace the coarse polygon with the smooth one that we just created
         }
 
-        // Transform back to 3D;
-        for (auto& b : polygon) {
-            b(2) += 0.1f; // raise a bit above the object surface to avoid flickering
-        }
 
-        m = m.inverse();
-        polygon = transform(polygon, m);
+        // Raise a bit above the object surface to avoid flickering:
+        for (auto& b : polygon)
+            b(2) += 0.1f;
+
+        // Transform back to 3D (and also back to mesh coordinates)
+        polygon = transform(polygon, inst_matrix.inverse() * m.inverse());
+
+        // make sure the points are in correct order:
+        if ( ((inst_matrix.inverse() * m.inverse()) * Vec3d(0., 0., 1.)).dot(normal) > 0.)
+            std::reverse(polygon.begin(),polygon.end());
     }
 
     // We'll sort the planes by area and only keep the 254 largest ones (because of the picking pass limitations):
@@ -1700,12 +1699,15 @@ void GLGizmoFlatten::update_planes()
 
     // Planes are finished - let's save what we calculated it from:
     m_volumes_matrices.clear();
-    for (const ModelVolume* vol : m_model_object->volumes)
+    m_volumes_types.clear();
+    for (const ModelVolume* vol : m_model_object->volumes) {
         m_volumes_matrices.push_back(vol->get_matrix());
+        m_volumes_types.push_back(vol->type());
+    }
+    m_first_instance_scale = m_model_object->instances.front()->get_scaling_factor();
 }
 
-// Check if the bounding boxes of each volume's convex hull is the same as before
-// and that scaling and rotation has not changed. In that case we don't have to recalculate it.
+
 bool GLGizmoFlatten::is_plane_update_necessary() const
 {
     if (m_state != On || !m_model_object || m_model_object->instances.empty())
@@ -1714,8 +1716,13 @@ bool GLGizmoFlatten::is_plane_update_necessary() const
     if (m_model_object->volumes.size() != m_volumes_matrices.size())
         return true;
 
+    // We want to recalculate when the scale changes - some planes could (dis)appear.
+    if (! m_model_object->instances.front()->get_scaling_factor().isApprox(m_first_instance_scale))
+        return true;
+
     for (unsigned int i=0; i < m_model_object->volumes.size(); ++i)
-        if (! m_model_object->volumes[i]->get_matrix().isApprox(m_volumes_matrices[i]))
+        if (! m_model_object->volumes[i]->get_matrix().isApprox(m_volumes_matrices[i])
+         || m_model_object->volumes[i]->type() != m_volumes_types[i])
             return true;
 
     return false;
@@ -1741,7 +1748,7 @@ GLGizmoSlaSupports::GLGizmoSlaSupports(GLCanvas3D& parent)
     if (m_quadric != nullptr)
         // using GLU_FILL does not work when the instance's transformation
         // contains mirroring (normals are reverted)
-        ::gluQuadricDrawStyle(m_quadric, GLU_SILHOUETTE);
+        ::gluQuadricDrawStyle(m_quadric, GLU_FILL);
 #endif // ENABLE_SLA_SUPPORT_GIZMO_MOD
 }
 
@@ -1784,6 +1791,18 @@ void GLGizmoSlaSupports::set_sla_support_data(ModelObject* model_object, const G
     {
         if (is_mesh_update_necessary())
             update_mesh();
+
+        // If there are no points, let's ask the backend if it calculated some.
+        if (model_object->sla_support_points.empty() && m_parent.sla_print()->is_step_done(slaposSupportPoints)) {
+            for (const SLAPrintObject* po : m_parent.sla_print()->objects()) {
+                if (po->model_object()->id() == model_object->id()) {
+                    const Eigen::MatrixXd& points = po->get_support_points();
+                    for (unsigned int i=0; i<points.rows();++i)
+                        model_object->sla_support_points.push_back(Vec3f(po->trafo().inverse().cast<float>() * Vec3f(points(i,0), points(i,1), points(i,2))));
+                        break;
+                }
+            }
+        }
     }
 }
 #else
@@ -1901,8 +1920,8 @@ void GLGizmoSlaSupports::render_grabbers(const GLCanvas3D::Selection& selection,
         ::glPushMatrix();
         ::glLoadIdentity();
         ::glTranslated(grabber_world_position(0), grabber_world_position(1), grabber_world_position(2) + z_shift);
-        ::gluQuadricDrawStyle(m_quadric, GLU_SILHOUETTE);
-        ::gluSphere(m_quadric, 0.75, 64, 36);
+        const float diameter = 0.8f;
+        ::gluSphere(m_quadric, diameter/2.f, 64, 36);
         ::glPopMatrix();
     }
 
@@ -1951,7 +1970,7 @@ void GLGizmoSlaSupports::render_grabbers(bool picking) const
             GLUquadricObj *quadric;
             quadric = ::gluNewQuadric();
             ::gluQuadricDrawStyle(quadric, GLU_FILL );
-            ::gluSphere( quadric , 0.75f, 64 , 32 );
+            ::gluSphere( quadric , 0.4, 64 , 32 );
             ::gluDeleteQuadric(quadric);
             ::glPopMatrix();
             if (!picking)
@@ -2168,6 +2187,9 @@ void GLGizmoSlaSupports::render_tooltip_texture() const {
 #if ENABLE_IMGUI
 void GLGizmoSlaSupports::on_render_input_window(float x, float y, const GLCanvas3D::Selection& selection)
 {
+    bool first_run = true; // This is a hack to redraw the button when all points are removed,
+                           // so it is not delayed until the background process finishes.
+RENDER_AGAIN:
     m_imgui->set_next_window_pos(x, y, ImGuiCond_Always);
     m_imgui->set_next_window_bg_alpha(0.5f);
     m_imgui->begin(on_get_name(), ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse);
@@ -2182,22 +2204,11 @@ void GLGizmoSlaSupports::on_render_input_window(float x, float y, const GLCanvas
 
     m_imgui->end();
 
-    if (remove_all_clicked)
+    if (remove_all_clicked) {
         delete_current_grabber(true);
-
-    if (generate) {
-        const DynamicPrintConfig& cfg = *wxGetApp().get_tab(Preset::TYPE_SLA_PRINT)->get_config();
-        SLAAutoSupports::Config config;
-        config.density_at_horizontal = cfg.opt_int("support_density_at_horizontal") / 10000.f;
-        config.density_at_45 = cfg.opt_int("support_density_at_45") / 10000.f;
-        config.minimal_z = cfg.opt_float("support_minimal_z");
-
-        SLAAutoSupports sas(*m_model_object, config);
-        sas.generate();
-        m_grabbers.clear();
-        for (const Vec3f& point : m_model_object->sla_support_points) {
-            m_grabbers.push_back(Grabber());
-            m_grabbers.back().center = point.cast<double>();
+        if (first_run) {
+            first_run = false;
+            goto RENDER_AGAIN;
         }
     }
 

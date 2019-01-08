@@ -5,6 +5,12 @@
 #include "BitmapCache.hpp"
 #include "I18N.hpp"
 
+#ifdef _MSC_VER
+    #define WIN32_LEAN_AND_MEAN
+    #define NOMINMAX
+    #include <Windows.h>
+#endif /* _MSC_VER */
+
 #include <fstream>
 #include <stdexcept>
 #include <boost/format.hpp>
@@ -13,6 +19,7 @@
 #include <boost/algorithm/string/predicate.hpp>
 
 #include <boost/nowide/cenv.hpp>
+#include <boost/nowide/convert.hpp>
 #include <boost/nowide/cstdio.hpp>
 #include <boost/nowide/fstream.hpp>
 #include <boost/property_tree/ini_parser.hpp>
@@ -126,7 +133,12 @@ VendorProfile VendorProfile::from_ini(const ptree &tree, const boost::filesystem
                 BOOST_LOG_TRIVIAL(error) << boost::format("Vendor bundle: `%1%`: Invalid printer technology field: `%2%`") % id % technology_field;
                 model.technology = ptFFF;
             }
-            section.second.get<std::string>("variants", "");
+#if 0
+			// Remove SLA printers from the initial alpha.
+			if (model.technology == ptSLA)
+				continue;
+#endif
+			section.second.get<std::string>("variants", "");
             const auto variants_field = section.second.get<std::string>("variants", "");
             std::vector<std::string> variants;
             if (Slic3r::unescape_strings_cstyle(variants_field, variants)) {
@@ -359,7 +371,8 @@ const std::vector<std::string>& Preset::printer_options()
             "toolchange_use_filament_gcode", "host_type", "print_host", "printhost_apikey", "printhost_cafile",
             "single_extruder_multi_material", "start_gcode", "end_gcode", "before_layer_gcode", "layer_gcode", "toolchange_gcode",
             "between_objects_gcode", "printer_vendor", "printer_model", "printer_variant", "printer_notes", "cooling_tube_retraction",
-            "cooling_tube_length", "parking_pos_retraction", "extra_loading_move", "max_print_height", "default_print_profile", "inherits",
+            "cooling_tube_length", "high_current_on_filament_swap", "parking_pos_retraction", "extra_loading_move", "max_print_height", 
+            "default_print_profile", "inherits",
             "remaining_times", "silent_mode", "machine_max_acceleration_extruding", "machine_max_acceleration_retracting",
 			"machine_max_acceleration_x", "machine_max_acceleration_y", "machine_max_acceleration_z", "machine_max_acceleration_e",
         	"machine_max_feedrate_x", "machine_max_feedrate_y", "machine_max_feedrate_z", "machine_max_feedrate_e",
@@ -446,7 +459,9 @@ const std::vector<std::string>& Preset::sla_printer_options()
             "printer_technology",
             "bed_shape", "max_print_height",
             "display_width", "display_height", "display_pixels_x", "display_pixels_y",
+            "display_orientation",
             "printer_correction",
+            "print_host", "printhost_apikey", "printhost_cafile",
             "printer_notes",
             "inherits"
         };
@@ -498,6 +513,16 @@ void PresetCollection::add_default_preset(const std::vector<std::string> &keys, 
     ++ m_num_default_presets;
 }
 
+bool is_file_plain(const std::string &path)
+{
+#ifdef _MSC_VER
+    DWORD attributes = GetFileAttributesW(boost::nowide::widen(path).c_str());
+    return (attributes & (FILE_ATTRIBUTE_HIDDEN | FILE_ATTRIBUTE_SYSTEM)) == 0;
+#else
+    return true;
+#endif
+}
+
 // Load all presets found in dir_path.
 // Throws an exception on error.
 void PresetCollection::load_presets(const std::string &dir_path, const std::string &subdir)
@@ -506,7 +531,10 @@ void PresetCollection::load_presets(const std::string &dir_path, const std::stri
 	m_dir_path = dir.string();
     std::string errors_cummulative;
 	for (auto &dir_entry : boost::filesystem::directory_iterator(dir))
-        if (boost::filesystem::is_regular_file(dir_entry.status()) && boost::algorithm::iends_with(dir_entry.path().filename().string(), ".ini")) {
+        if (boost::filesystem::is_regular_file(dir_entry.status()) && boost::algorithm::iends_with(dir_entry.path().filename().string(), ".ini") &&
+            // Ignore system and hidden files, which may be created by the DropBox synchronisation process.
+            // https://github.com/prusa3d/Slic3r/issues/1298
+            is_file_plain(dir_entry.path().string())) {
             std::string name = dir_entry.path().filename().string();
             // Remove the .ini suffix.
             name.erase(name.size() - 4);

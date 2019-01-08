@@ -222,7 +222,8 @@ class PrusaObjectDataViewModelNode
     size_t                          m_volumes_cnt = 0;
     std::vector< std::string >      m_opt_categories;
 public:
-	PrusaObjectDataViewModelNode(const wxString &name) {
+    PrusaObjectDataViewModelNode(const wxString &name, 
+                                 const wxString& extruder) {
 		m_parent	= NULL;
 		m_name		= name;
 		m_type		= itObject;
@@ -232,6 +233,7 @@ public:
         // it will be produce "segmentation fault"
         m_container = true;
 #endif  //__WXGTK__
+        m_extruder = extruder;
 		set_object_action_icon();
 	}
 
@@ -438,7 +440,7 @@ public:
     PrusaObjectDataViewModel();
     ~PrusaObjectDataViewModel();
 
-	wxDataViewItem Add(const wxString &name);
+	wxDataViewItem Add(const wxString &name, const int extruder);
 	wxDataViewItem AddVolumeChild(const wxDataViewItem &parent_item, 
 							const wxString &name, 
                             const int volume_type,
@@ -455,11 +457,13 @@ public:
 	wxDataViewItem GetItemById(int obj_idx);
 	wxDataViewItem GetItemByVolumeId(int obj_idx, int volume_idx);
 	wxDataViewItem GetItemByInstanceId(int obj_idx, int inst_idx);
-	int GetIdByItem(const wxDataViewItem& item);
+	int GetIdByItem(const wxDataViewItem& item) const;
     int GetIdByItemAndType(const wxDataViewItem& item, const ItemType type) const;
+    int GetObjectIdByItem(const wxDataViewItem& item) const;
     int GetVolumeIdByItem(const wxDataViewItem& item) const;
     int GetInstanceIdByItem(const wxDataViewItem& item) const;
     void GetItemInfo(const wxDataViewItem& item, ItemType& type, int& obj_idx, int& idx);
+    int GetRowByItem(const wxDataViewItem& item) const;
     bool IsEmpty() { return m_objects.empty(); }
 
 	// helper method for wxLog
@@ -515,24 +519,54 @@ public:
 // ----------------------------------------------------------------------------
 // PrusaBitmapTextRenderer
 // ----------------------------------------------------------------------------
-
+#if ENABLE_NONCUSTOM_DATA_VIEW_RENDERING
+class PrusaBitmapTextRenderer : public wxDataViewRenderer
+#else
 class PrusaBitmapTextRenderer : public wxDataViewCustomRenderer
+#endif //ENABLE_NONCUSTOM_DATA_VIEW_RENDERING
 {
 public:
-    PrusaBitmapTextRenderer(  wxDataViewCellMode mode = wxDATAVIEW_CELL_INERT,
-                            int align = wxDVR_DEFAULT_ALIGNMENT): 
-                            wxDataViewCustomRenderer(wxT("PrusaDataViewBitmapText"), mode, align) {}
+    PrusaBitmapTextRenderer(wxDataViewCellMode mode =
+#ifdef __WXOSX__
+                                                        wxDATAVIEW_CELL_INERT
+#else
+                                                        wxDATAVIEW_CELL_EDITABLE
+#endif
+
+                            ,int align = wxDVR_DEFAULT_ALIGNMENT
+#if ENABLE_NONCUSTOM_DATA_VIEW_RENDERING
+                            );
+#else
+                            ) : wxDataViewCustomRenderer(wxT("PrusaDataViewBitmapText"), mode, align) {}
+#endif //ENABLE_NONCUSTOM_DATA_VIEW_RENDERING
 
     bool SetValue(const wxVariant &value);
     bool GetValue(wxVariant &value) const;
+#if ENABLE_NONCUSTOM_DATA_VIEW_RENDERING && wxUSE_ACCESSIBILITY
+    virtual wxString GetAccessibleDescription() const override;
+#endif // wxUSE_ACCESSIBILITY && ENABLE_NONCUSTOM_DATA_VIEW_RENDERING
 
     virtual bool Render(wxRect cell, wxDC *dc, int state);
     virtual wxSize GetSize() const;
 
-    virtual bool HasEditorCtrl() const { return false; }
+    bool        HasEditorCtrl() const override
+    {
+#ifdef __WXOSX__
+        return false;
+#else
+        return true;
+#endif        
+    }
+    wxWindow*   CreateEditorCtrl(wxWindow* parent, 
+                                 wxRect labelRect, 
+                                 const wxVariant& value) override;
+    bool        GetValueFromEditorCtrl( wxWindow* ctrl, 
+                                        wxVariant& value) override;
+    bool        WasCanceled() const { return m_was_unusable_symbol; }
 
 private:
     PrusaDataViewBitmapText m_value;
+    bool                    m_was_unusable_symbol {false};
 };
 
 
@@ -663,18 +697,20 @@ public:
         const wxString& name = wxEmptyString);
     ~PrusaDoubleSlider() {}
 
-    int GetLowerValue() const {
-        return m_lower_value;
-    }
-    int GetHigherValue() const {
-        return m_higher_value;
-    }
+    int GetMinValue() const { return m_min_value; }
+    int GetMaxValue() const { return m_max_value; }
+    double GetMinValueD()  { return m_values.empty() ? 0. : m_values[m_min_value].second; }
+    double GetMaxValueD() { return m_values.empty() ? 0. : m_values[m_max_value].second; }
+    int GetLowerValue() const { return m_lower_value; }
+    int GetHigherValue() const { return m_higher_value; }
     int GetActiveValue() const;
     double GetLowerValueD()  { return get_double_value(ssLower); }
     double GetHigherValueD() { return get_double_value(ssHigher); }
     wxSize DoGetBestSize() const override;
     void SetLowerValue(const int lower_val);
     void SetHigherValue(const int higher_val);
+    // Set low and high slider position. If the span is non-empty, disable the "one layer" mode.
+    void SetSelectionSpan(const int lower_val, const int higher_val);
     void SetMaxValue(const int max_value);
     void SetKoefForLabels(const double koef) {
         m_label_koef = koef;
@@ -691,6 +727,12 @@ public:
     void DisableTickManipulation() {
         EnableTickManipulation(false);
     }
+
+	bool is_horizontal() const { return m_style == wxSL_HORIZONTAL; }
+	bool is_one_layer() const { return m_is_one_layer; }
+    bool is_lower_at_min() const { return m_lower_value == m_min_value; }
+    bool is_higher_at_max() const { return m_higher_value == m_max_value; }
+    bool is_full_span() const { return this->is_lower_at_min() && this->is_higher_at_max(); }
 
     void OnPaint(wxPaintEvent& ) { render();}
     void OnLeftDown(wxMouseEvent& event);
@@ -728,7 +770,6 @@ protected:
 
     bool    is_point_in_rect(const wxPoint& pt, const wxRect& rect);
     int     is_point_near_tick(const wxPoint& pt);
-    bool    is_horizontal() const { return m_style == wxSL_HORIZONTAL; }
 
     double      get_scroll_step();
     wxString    get_label(const SelectedSlider& selection) const;

@@ -204,7 +204,9 @@ std::string WipeTowerIntegration::append_tcr(GCode &gcodegen, const WipeTower::T
     if (! start_filament_gcode.empty()) {
         // Process the start_filament_gcode for the active filament only.
         gcodegen.placeholder_parser().set("current_extruder", new_extruder_id);
-        gcode += gcodegen.placeholder_parser_process("start_filament_gcode", start_filament_gcode, new_extruder_id);
+        DynamicConfig config;
+        config.set_key_value("filament_extruder_id", new ConfigOptionInt(new_extruder_id));
+        gcode += gcodegen.placeholder_parser_process("start_filament_gcode", start_filament_gcode, new_extruder_id, &config);
         check_add_eol(gcode);
     }
     // A phony move to the end position at the wipe tower.
@@ -423,7 +425,7 @@ void GCode::do_export(Print *print, const char *path, GCodePreviewData *preview_
 
 	print->set_started(psGCodeExport);
 
-    BOOST_LOG_TRIVIAL(info) << "Exporting G-code...";
+    BOOST_LOG_TRIVIAL(info) << "Exporting G-code..." << log_memory_info();
 
     // Remove the old g-code if it exists.
     boost::nowide::remove(path);
@@ -435,9 +437,11 @@ void GCode::do_export(Print *print, const char *path, GCodePreviewData *preview_
     if (file == nullptr)
         throw std::runtime_error(std::string("G-code export to ") + path + " failed.\nCannot open the file for writing.\n");
 
+    m_enable_analyzer = preview_data != nullptr;
+
     try {
         m_placeholder_parser_failed_templates.clear();
-        this->_do_export(*print, file, preview_data);
+        this->_do_export(*print, file);
         fflush(file);
         if (ferror(file)) {
             fclose(file);
@@ -453,15 +457,6 @@ void GCode::do_export(Print *print, const char *path, GCodePreviewData *preview_
     }
     fclose(file);
 
-    if (print->config().remaining_times.value) {
-        BOOST_LOG_TRIVIAL(debug) << "Processing remaining times for normal mode";
-        m_normal_time_estimator.post_process_remaining_times(path_tmp, 60.0f);
-        if (m_silent_time_estimator_enabled) {
-            BOOST_LOG_TRIVIAL(debug) << "Processing remaining times for silent mode";
-            m_silent_time_estimator.post_process_remaining_times(path_tmp, 60.0f);
-        }
-    }
-
     if (! m_placeholder_parser_failed_templates.empty()) {
         // G-code export proceeded, but some of the PlaceholderParser substitutions failed.
         std::string msg = std::string("G-code export to ") + path + " failed due to invalid custom G-code sections:\n\n";
@@ -475,12 +470,30 @@ void GCode::do_export(Print *print, const char *path, GCodePreviewData *preview_
         throw std::runtime_error(msg);
     }
 
+    if (print->config().remaining_times.value) {
+        BOOST_LOG_TRIVIAL(debug) << "Processing remaining times for normal mode";
+        m_normal_time_estimator.post_process_remaining_times(path_tmp, 60.0f);
+        m_normal_time_estimator.reset();
+        if (m_silent_time_estimator_enabled) {
+            BOOST_LOG_TRIVIAL(debug) << "Processing remaining times for silent mode";
+            m_silent_time_estimator.post_process_remaining_times(path_tmp, 60.0f);
+            m_silent_time_estimator.reset();
+        }
+    }
+
+    // starts analyzer calculations
+    if (m_enable_analyzer) {
+        BOOST_LOG_TRIVIAL(debug) << "Preparing G-code preview data";
+        m_analyzer.calc_gcode_preview_data(*preview_data);
+        m_analyzer.reset();
+    }
+
     if (rename_file(path_tmp, path) != 0)
         throw std::runtime_error(
             std::string("Failed to rename the output G-code file from ") + path_tmp + " to " + path + '\n' +
             "Is " + path_tmp + " locked?" + '\n');
 
-    BOOST_LOG_TRIVIAL(info) << "Exporting G-code finished";
+    BOOST_LOG_TRIVIAL(info) << "Exporting G-code finished" << log_memory_info();
 	print->set_done(psGCodeExport);
 
     // Write the profiler measurements to file
@@ -488,7 +501,7 @@ void GCode::do_export(Print *print, const char *path, GCodePreviewData *preview_
     PROFILE_OUTPUT(debug_out_path("gcode-export-profile.txt").c_str());
 }
 
-void GCode::_do_export(Print &print, FILE *file, GCodePreviewData *preview_data)
+void GCode::_do_export(Print &print, FILE *file)
 {
     PROFILE_FUNC();
 
@@ -558,7 +571,6 @@ void GCode::_do_export(Print &print, FILE *file, GCodePreviewData *preview_data)
 
     // resets analyzer
     m_analyzer.reset();
-    m_enable_analyzer = preview_data != nullptr;
 
     // resets analyzer's tracking data
     m_last_mm3_per_mm = GCodeAnalyzer::Default_mm3_per_mm;
@@ -777,11 +789,17 @@ void GCode::_do_export(Print &print, FILE *file, GCodePreviewData *preview_data)
             // Wipe tower will control the extruder switching, it will call the start_filament_gcode.
         } else {
             // Only initialize the initial extruder.
-            _writeln(file, this->placeholder_parser_process("start_filament_gcode", print.config().start_filament_gcode.values[initial_extruder_id], initial_extruder_id));
+            DynamicConfig config;
+            config.set_key_value("filament_extruder_id", new ConfigOptionInt(int(initial_extruder_id)));
+			_writeln(file, this->placeholder_parser_process("start_filament_gcode", print.config().start_filament_gcode.values[initial_extruder_id], initial_extruder_id, &config));
         }
     } else {
-        for (const std::string &start_gcode : print.config().start_filament_gcode.values)
-            _writeln(file, this->placeholder_parser_process("start_gcode", start_gcode, (unsigned int)(&start_gcode - &print.config().start_filament_gcode.values.front())));
+        DynamicConfig config;
+        for (const std::string &start_gcode : print.config().start_filament_gcode.values) {
+            int extruder_id = (unsigned int)(&start_gcode - &print.config().start_filament_gcode.values.front());
+            config.set_key_value("filament_extruder_id", new ConfigOptionInt(extruder_id));
+            _writeln(file, this->placeholder_parser_process("start_filament_gcode", start_gcode, extruder_id, &config));
+        }
     }
     this->_print_first_layer_extruder_temperatures(file, print, start_gcode, initial_extruder_id, true);
     print.throw_if_canceled();
@@ -799,7 +817,7 @@ void GCode::_do_export(Print &print, FILE *file, GCodePreviewData *preview_data)
                 for (const ExPolygon &expoly : layer->slices.expolygons)
                     for (const Point &copy : object->copies()) {
                         islands.emplace_back(expoly.contour);
-                        islands.back().translate(- copy);
+                        islands.back().translate(copy);
                     }
         //FIXME Mege the islands in parallel.
         m_avoid_crossing_perimeters.init_external_mp(union_ex(islands));
@@ -980,10 +998,15 @@ void GCode::_do_export(Print &print, FILE *file, GCodePreviewData *preview_data)
         config.set_key_value("layer_z",   new ConfigOptionFloat(m_writer.get_position()(2) - m_config.z_offset.value));
         if (print.config().single_extruder_multi_material || print.config().toolchange_use_filament_gcode) {
             // Process the end_filament_gcode for the active filament only.
-            _writeln(file, this->placeholder_parser_process("end_filament_gcode", print.config().end_filament_gcode.get_at(m_writer.extruder()->id()), m_writer.extruder()->id(), &config));
+            int extruder_id = m_writer.extruder()->id();
+            config.set_key_value("filament_extruder_id", new ConfigOptionInt(extruder_id));
+            _writeln(file, this->placeholder_parser_process("end_filament_gcode", print.config().end_filament_gcode.get_at(extruder_id), extruder_id, &config));
         } else {
-            for (const std::string &end_gcode : print.config().end_filament_gcode.values)
-                _writeln(file, this->placeholder_parser_process("end_filament_gcode", end_gcode, (unsigned int)(&end_gcode - &print.config().end_filament_gcode.values.front()), &config));
+            for (const std::string &end_gcode : print.config().end_filament_gcode.values) {
+				int extruder_id = (unsigned int)(&end_gcode - &print.config().end_filament_gcode.values.front());
+                config.set_key_value("filament_extruder_id", new ConfigOptionInt(extruder_id));
+                _writeln(file, this->placeholder_parser_process("end_filament_gcode", end_gcode, extruder_id, &config));
+            }
         }
         _writeln(file, this->placeholder_parser_process("end_gcode", print.config().end_gcode, m_writer.extruder()->id(), &config));
     }
@@ -1034,12 +1057,6 @@ void GCode::_do_export(Print &print, FILE *file, GCodePreviewData *preview_data)
             _write(file, full_config);
     }
     print.throw_if_canceled();
-
-    // starts analyzer calculations
-    if (preview_data != nullptr) {
-        BOOST_LOG_TRIVIAL(debug) << "Preparing G-code preview data";
-        m_analyzer.calc_gcode_preview_data(*preview_data);
-    }
 }
 
 std::string GCode::placeholder_parser_process(const std::string &name, const std::string &templ, unsigned int current_extruder_id, const DynamicConfig *config_override)
@@ -1231,7 +1248,7 @@ void GCode::process_layer(
     const Print                     &print,
     // Set of object & print layers of the same PrintObject and with the same print_z.
     const std::vector<LayerToPrint> &layers,
-    const LayerTools  &layer_tools,
+    const LayerTools                &layer_tools,
     // If set to size_t(-1), then print all copies of all objects.
     // Otherwise print a single copy of a single object.
     const size_t                     single_object_idx)
@@ -1645,6 +1662,11 @@ void GCode::process_layer(
     // printf("G-code after filter:\n%s\n", out.c_str());
     
     _write(file, gcode);
+    BOOST_LOG_TRIVIAL(trace) << "Exported layer " << layer.id() << " print_z " << print_z << 
+        ", time estimator memory: " <<
+            format_memsize_MB(m_normal_time_estimator.memory_used() + m_silent_time_estimator_enabled ? m_silent_time_estimator.memory_used() : 0) <<
+        ", analyzer memory: " <<
+            format_memsize_MB(m_analyzer.memory_used());
 }
 
 void GCode::apply_print_config(const PrintConfig &print_config)

@@ -336,7 +336,7 @@ double ConfigBase::get_abs_value(const t_config_option_key &opt_key, double rati
     return static_cast<const ConfigOptionFloatOrPercent*>(raw_opt)->get_abs_value(ratio_over);
 }
 
-void ConfigBase::setenv_()
+void ConfigBase::setenv_() const
 {
     t_config_option_keys opt_keys = this->keys();
     for (t_config_option_keys::const_iterator it = opt_keys.begin(); it != opt_keys.end(); ++it) {
@@ -404,7 +404,7 @@ void ConfigBase::load_from_gcode_file(const std::string &file)
 
     size_t key_value_pairs = load_from_gcode_string(data.data());
     if (key_value_pairs < 80)
-        throw std::runtime_error((boost::format("Suspiciously low number of configuration values extracted from %1: %2") % file % key_value_pairs).str());
+        throw std::runtime_error((boost::format("Suspiciously low number of configuration values extracted from %1%: %2%") % file % key_value_pairs).str());
 }
 
 // Load the config keys from the given string.
@@ -483,8 +483,9 @@ bool DynamicConfig::operator==(const DynamicConfig &rhs) const
     t_options_map::const_iterator it2     = rhs.options.begin();
     t_options_map::const_iterator it2_end = rhs.options.end();
     for (; it1 != it1_end && it2 != it2_end; ++ it1, ++ it2)
-        if (*it1->second != *it2->second)
-            return false;
+		if (it1->first != it2->first || *it1->second != *it2->second)
+			// key or value differ
+			return false;
     return it1 == it1_end && it2 == it2_end;
 }
 
@@ -535,7 +536,7 @@ void DynamicConfig::read_cli(const std::vector<std::string> &tokens, t_config_op
     args.emplace_back(const_cast<char*>(""));
     for (size_t i = 0; i < tokens.size(); ++ i)
         args.emplace_back(const_cast<char *>(tokens[i].c_str()));
-    this->read_cli(args.size(), &args[0], extra);
+    this->read_cli(int(args.size()), &args[0], extra);
 }
 
 bool DynamicConfig::read_cli(int argc, char** argv, t_config_option_keys* extra)

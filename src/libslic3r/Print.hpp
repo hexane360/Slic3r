@@ -78,7 +78,6 @@ private: // Prevents erroneous use by other classes.
 public:
     // vector of (vectors of volume ids), indexed by region_id
     std::vector<std::vector<int>> region_volumes;
-    t_layer_height_ranges   layer_height_ranges;
 
     // Profile of increasing z to a layer height, to be linearly interpolated when calculating the layers.
     // The pairs of <z, layer_height> are packed into a 1D array to simplify handling by the Perl XS.
@@ -108,8 +107,8 @@ public:
     // adds region_id, too, if necessary
     void add_region_volume(unsigned int region_id, int volume_id) {
         if (region_id >= region_volumes.size())
-            region_volumes.resize(region_id + 1);
-        region_volumes[region_id].push_back(volume_id);
+			region_volumes.resize(region_id + 1);
+        region_volumes[region_id].emplace_back(volume_id);
     }
     // This is the *total* layer count (including support layers)
     // this value is not supposed to be compared with Layer::id
@@ -165,7 +164,7 @@ protected:
     void                    config_apply(const ConfigBase &other, bool ignore_nonexistent = false) { this->m_config.apply(other, ignore_nonexistent); }
     void                    config_apply_only(const ConfigBase &other, const t_config_option_keys &keys, bool ignore_nonexistent = false) { this->m_config.apply_only(other, keys, ignore_nonexistent); }
     void                    set_trafo(const Transform3d& trafo) { m_trafo = trafo; }
-    bool                    set_copies(const Points &points);
+    PrintBase::ApplyStatus  set_copies(const Points &points);
     // Invalidates the step, and its depending steps in PrintObject and Print.
     bool                    invalidate_step(PrintObjectStep step);
     // Invalidates all PrintObject and Print steps.
@@ -250,6 +249,13 @@ struct PrintStatistics
     double                          total_wipe_tower_filament;
     std::map<size_t, float>         filament_stats;
 
+    // Config with the filled in print statistics.
+    DynamicConfig           config() const;
+    // Config with the statistics keys populated with placeholder strings.
+    static DynamicConfig    placeholders();
+    // Replace the print statistics placeholders in the path.
+    std::string             finalize_output_path(const std::string &path_in) const;
+
     void clear() {
         estimated_normal_print_time.clear();
         estimated_silent_print_time.clear();
@@ -298,7 +304,10 @@ public:
 
     // methods for handling state
     bool                is_step_done(PrintStep step) const { return Inherited::is_step_done(step); }
+    // Returns true if an object step is done on all objects and there's at least one object.    
     bool                is_step_done(PrintObjectStep step) const;
+    // Returns true if the last step was finished with success.
+    bool                finished() const override { return this->is_step_done(psGCodeExport); }
 
     bool                has_infinite_skirt() const;
     bool                has_skirt() const;
@@ -344,8 +353,7 @@ public:
     bool                        has_wipe_tower() const;
     const WipeTowerData&        wipe_tower_data() const { return m_wipe_tower_data; }
 
-	std::string                 output_filename() const override 
-        { return this->PrintBase::output_filename(m_config.output_filename_format.value, "gcode"); }
+	std::string                 output_filename() const override;
 
     // Accessed by SupportMaterial
     const PrintRegion*  get_region(size_t idx) const  { return m_regions[idx]; }

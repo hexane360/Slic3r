@@ -1194,9 +1194,9 @@ Vec3d extract_euler_angles(const Eigen::Matrix<double, 3, 3, Eigen::DontAlign>& 
     }
     else
     {
-        angles(0) = ::atan2(-rotation_matrix(1, 2), rotation_matrix(1, 1));
+        angles(1) = 0.0;
         angles(1) = ::atan2(-rotation_matrix(2, 0), sy);
-        angles(2) = 0.0;
+        angles(2) = (angles(1) >-0.0) ? ::atan2(rotation_matrix(1, 2), rotation_matrix(1, 1)) : ::atan2(-rotation_matrix(1, 2), rotation_matrix(1, 1));
     }
 
     return angles;
@@ -1213,7 +1213,6 @@ Vec3d extract_euler_angles(const Transform3d& transform)
     return extract_euler_angles(m);
 }
 
-#if ENABLE_MODELVOLUME_TRANSFORM
 Transformation::Flags::Flags()
     : dont_translate(true)
     , dont_rotate(true)
@@ -1383,6 +1382,5 @@ Transformation Transformation::operator * (const Transformation& other) const
 {
     return Transformation(get_matrix() * other.get_matrix());
 }
-#endif // ENABLE_MODELVOLUME_TRANSFORM
 
 } }

@@ -1164,6 +1164,22 @@ size_t PresetBundle::load_configbundle(const std::string &path, unsigned int fla
                         section.first << "\" has already been loaded from another Confing Bundle.";
                     continue;
                 }
+            } else if ((flags & LOAD_CFGBNDLE_SYSTEM) == 0) {
+                // This is a user config bundle.
+                const Preset *existing = presets->find_preset(preset_name, false);
+                if (existing != nullptr) {
+                    if (existing->is_system) {
+    					assert(existing->vendor != nullptr);
+                        BOOST_LOG_TRIVIAL(error) << "Error in a user provided Config Bundle \"" << path << "\": The " << presets->name() << " preset \"" << 
+    						existing->name << "\" is a system preset of vendor " << existing->vendor->name << " and it will be ignored.";
+                        continue;
+                    } else {
+                        assert(existing->vendor == nullptr);
+                        BOOST_LOG_TRIVIAL(trace) << "A " << presets->name() << " preset \"" << existing->name << "\" was overwritten with a preset from user Config Bundle \"" << path << "\"";
+                    }
+                } else {
+					BOOST_LOG_TRIVIAL(trace) << "A new " << presets->name() << " preset \"" << preset_name << "\" was imported from user Config Bundle \"" << path << "\"";
+                }
             }
             // Decide a full path to this .ini file.
             auto file_name = boost::algorithm::iends_with(preset_name, ".ini") ? preset_name : preset_name + ".ini";
@@ -1313,7 +1329,7 @@ void PresetBundle::update_compatible(bool select_other_if_incompatible)
     }
 }
 
-void PresetBundle::export_configbundle(const std::string &path) //, const DynamicPrintConfig &settings
+void PresetBundle::export_configbundle(const std::string &path, bool export_system_settings)
 {
     boost::nowide::ofstream c;
     c.open(path, std::ios::out | std::ios::trunc);
@@ -1323,14 +1339,15 @@ void PresetBundle::export_configbundle(const std::string &path) //, const Dynami
 
     // Export the print, filament and printer profiles.
 
-    // #ys_FIXME_SLA_PRINT
-    for (size_t i_group = 0; i_group < 3; ++ i_group) {
-        const PresetCollection &presets = (i_group == 0) ? this->prints : (i_group == 1) ? this->filaments : this->printers;
-        for (const Preset &preset : presets()) {
-            if (preset.is_default || preset.is_external)
+	for (const PresetCollection *presets : { 
+		(const PresetCollection*)&this->prints, (const PresetCollection*)&this->filaments, 
+		(const PresetCollection*)&this->sla_prints, (const PresetCollection*)&this->sla_materials, 
+		(const PresetCollection*)&this->printers }) {
+        for (const Preset &preset : (*presets)()) {
+            if (preset.is_default || preset.is_external || (preset.is_system && ! export_system_settings))
                 // Only export the common presets, not external files or the default preset.
                 continue;
-            c << std::endl << "[" << presets.name() << ":" << preset.name << "]" << std::endl;
+            c << std::endl << "[" << presets->name() << ":" << preset.name << "]" << std::endl;
             for (const std::string &opt_key : preset.config.keys())
                 c << opt_key << " = " << preset.config.serialize(opt_key) << std::endl;
         }

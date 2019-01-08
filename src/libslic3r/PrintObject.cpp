@@ -5,6 +5,7 @@
 #include "SupportMaterial.hpp"
 #include "Surface.hpp"
 #include "Slicing.hpp"
+#include "Utils.hpp"
 
 #include <utility>
 #include <boost/log/trivial.hpp>
@@ -65,11 +66,10 @@ PrintObject::PrintObject(Print* print, ModelObject* model_object, bool add_insta
         this->set_copies(copies);
     }
 
-    this->layer_height_ranges = model_object->layer_height_ranges;
     this->layer_height_profile = model_object->layer_height_profile;
 }
 
-bool PrintObject::set_copies(const Points &points)
+PrintBase::ApplyStatus PrintObject::set_copies(const Points &points)
 {
     // Order copies with a nearest-neighbor search.
     std::vector<Point> copies;
@@ -81,14 +81,15 @@ bool PrintObject::set_copies(const Points &points)
             copies.emplace_back(points[point_idx] + m_copies_shift);
     }
     // Invalidate and set copies.
-    bool invalidated = false;
+    PrintBase::ApplyStatus status = PrintBase::APPLY_STATUS_UNCHANGED;
     if (copies != m_copies) {
-        invalidated = m_print->invalidate_steps({ psSkirt, psBrim, psGCodeExport });
-        if (copies.size() != m_copies.size())
-            invalidated |= m_print->invalidate_step(psWipeTower);
+        status = PrintBase::APPLY_STATUS_CHANGED;
+        if (m_print->invalidate_steps({ psSkirt, psBrim, psGCodeExport }) ||
+            (copies.size() != m_copies.size() && m_print->invalidate_step(psWipeTower)))
+            status = PrintBase::APPLY_STATUS_INVALIDATED;
         m_copies = copies;
     }
-    return invalidated;
+    return status;
 }
 
 // 1) Decides Z positions of the layers,
@@ -133,7 +134,7 @@ void PrintObject::make_perimeters()
         return;
 
     m_print->set_status(20, "Generating perimeters");
-    BOOST_LOG_TRIVIAL(info) << "Generating perimeters...";
+    BOOST_LOG_TRIVIAL(info) << "Generating perimeters..." << log_memory_info();
     
     // merge slices if they were split into types
     if (this->typed_slices) {
@@ -254,7 +255,7 @@ void PrintObject::prepare_infill()
     // Decide what surfaces are to be filled.
     // Here the S_TYPE_TOP / S_TYPE_BOTTOMBRIDGE / S_TYPE_BOTTOM infill is turned to just S_TYPE_INTERNAL if zero top / bottom infill layers are configured.
     // Also tiny S_TYPE_INTERNAL surfaces are turned to S_TYPE_INTERNAL_SOLID.
-    BOOST_LOG_TRIVIAL(info) << "Preparing fill surfaces...";
+    BOOST_LOG_TRIVIAL(info) << "Preparing fill surfaces..." << log_memory_info();
     for (auto *layer : m_layers)
         for (auto *region : layer->m_regions) {
             region->prepare_fill_surfaces();
@@ -385,6 +386,14 @@ void PrintObject::generate_support_material()
             m_print->set_status(85, "Generating support material");    
             this->_generate_support_material();
             m_print->throw_if_canceled();
+        } else {
+#if 0
+            // Printing without supports. Empty layer means some objects or object parts are levitating,
+            // therefore they cannot be printed without supports.
+            for (const Layer *layer : m_layers)
+                if (layer->empty())
+                    throw std::runtime_error("Levitating objects cannot be printed without supports.");
+#endif
         }
         this->set_done(posSupportMaterial);
     }
@@ -523,11 +532,13 @@ bool PrintObject::invalidate_state_by_config_options(const std::vector<t_config_
             || opt_key == "perimeter_speed"
             || opt_key == "small_perimeter_speed"
             || opt_key == "solid_infill_speed"
-            || opt_key == "top_solid_infill_speed"
-            || opt_key == "wipe_into_infill"    // when these these two are changed, we only need to invalidate the wipe tower,
-            || opt_key == "wipe_into_objects"   // which we already did at the very beginning - nothing more to be done
-            ) {
-            // these options only affect G-code export, so nothing to invalidate
+            || opt_key == "top_solid_infill_speed") {
+            invalidated |= m_print->invalidate_step(psGCodeExport);
+        } else if (
+               opt_key == "wipe_into_infill"
+            || opt_key == "wipe_into_objects") {
+            invalidated |= m_print->invalidate_step(psWipeTower);
+            invalidated |= m_print->invalidate_step(psGCodeExport);
         } else {
             // for legacy, if we can't handle this option let's invalidate all steps
             this->invalidate_all_steps();
@@ -548,15 +559,15 @@ bool PrintObject::invalidate_step(PrintObjectStep step)
     
     // propagate to dependent steps
     if (step == posPerimeters) {
-        invalidated |= this->invalidate_step(posPrepareInfill);
+		invalidated |= this->invalidate_steps({ posPrepareInfill, posInfill });
         invalidated |= m_print->invalidate_steps({ psSkirt, psBrim });
     } else if (step == posPrepareInfill) {
         invalidated |= this->invalidate_step(posInfill);
     } else if (step == posInfill) {
         invalidated |= m_print->invalidate_steps({ psSkirt, psBrim });
     } else if (step == posSlice) {
-        invalidated |= this->invalidate_steps({ posPerimeters, posSupportMaterial });
-        invalidated |= m_print->invalidate_step(psWipeTower);
+		invalidated |= this->invalidate_steps({ posPerimeters, posPrepareInfill, posInfill, posSupportMaterial });
+		invalidated |= m_print->invalidate_steps({ psSkirt, psBrim });
     } else if (step == posSupportMaterial)
         invalidated |= m_print->invalidate_steps({ psSkirt, psBrim });
 
@@ -592,7 +603,7 @@ bool PrintObject::has_support_material() const
 // If a part of a region is of stBottom and stTop, the stBottom wins.
 void PrintObject::detect_surfaces_type()
 {
-    BOOST_LOG_TRIVIAL(info) << "Detecting solid surfaces...";
+    BOOST_LOG_TRIVIAL(info) << "Detecting solid surfaces..." << log_memory_info();
 
     // Interface shells: the intersecting parts are treated as self standing objects supporting each other.
     // Each of the objects will have a full number of top / bottom layers, even if these top / bottom layers
@@ -784,7 +795,7 @@ void PrintObject::detect_surfaces_type()
 
 void PrintObject::process_external_surfaces()
 {
-    BOOST_LOG_TRIVIAL(info) << "Processing external surfaces...";
+    BOOST_LOG_TRIVIAL(info) << "Processing external surfaces..." << log_memory_info();
 
 	for (size_t region_id = 0; region_id < this->region_volumes.size(); ++region_id) {
         const PrintRegion &region = *m_print->regions()[region_id];
@@ -809,7 +820,7 @@ void PrintObject::discover_vertical_shells()
 {
     PROFILE_FUNC();
 
-    BOOST_LOG_TRIVIAL(info) << "Discovering vertical shells...";
+    BOOST_LOG_TRIVIAL(info) << "Discovering vertical shells..." << log_memory_info();
 
     struct DiscoverVerticalShellsCacheEntry
     {
@@ -1109,7 +1120,7 @@ void PrintObject::discover_vertical_shells()
 #if 1
                     // Intentionally inflate a bit more than how much the region has been shrunk, 
                     // so there will be some overlap between this solid infill and the other infill regions (mainly the sparse infill).
-                    shell = offset2(shell, - 0.5f * min_perimeter_infill_spacing, 0.8f * min_perimeter_infill_spacing, ClipperLib::jtSquare);
+                    shell = offset(offset_ex(union_ex(shell), - 0.5f * min_perimeter_infill_spacing), 0.8f * min_perimeter_infill_spacing, ClipperLib::jtSquare);
                     if (shell.empty())
                         continue;
 #else
@@ -1193,7 +1204,7 @@ void PrintObject::discover_vertical_shells()
    sparse infill */
 void PrintObject::bridge_over_infill()
 {
-    BOOST_LOG_TRIVIAL(info) << "Bridge over infill...";
+    BOOST_LOG_TRIVIAL(info) << "Bridge over infill..." << log_memory_info();
 
     for (size_t region_id = 0; region_id < this->region_volumes.size(); ++ region_id) {
         const PrintRegion &region = *m_print->regions()[region_id];
@@ -1330,7 +1341,7 @@ bool PrintObject::update_layer_height_profile(std::vector<coordf_t> &layer_heigh
     bool updated = false;
 
     // If the layer height profile is not set, try to use the one stored at the ModelObject.
-    if (layer_height_profile.empty() && layer_height_profile.data() != this->model_object()->layer_height_profile.data()) {
+    if (layer_height_profile.empty()) {
         layer_height_profile = this->model_object()->layer_height_profile;
         updated = true;
     }
@@ -1347,10 +1358,9 @@ bool PrintObject::update_layer_height_profile(std::vector<coordf_t> &layer_heigh
     if (layer_height_profile.empty()) {
         if (0)
 //        if (this->layer_height_profile.empty())
-            layer_height_profile = layer_height_profile_adaptive(slicing_params, this->layer_height_ranges,
-                this->model_object()->volumes);
+			layer_height_profile = layer_height_profile_adaptive(slicing_params, this->model_object()->layer_height_ranges, this->model_object()->volumes);
         else
-            layer_height_profile = layer_height_profile_from_ranges(slicing_params, this->layer_height_ranges);
+			layer_height_profile = layer_height_profile_from_ranges(slicing_params, this->model_object()->layer_height_ranges);
         updated = true;
     }
     return updated;
@@ -1379,7 +1389,7 @@ bool PrintObject::update_layer_height_profile()
 // this should be idempotent
 void PrintObject::_slice()
 {
-    BOOST_LOG_TRIVIAL(info) << "Slicing objects...";
+    BOOST_LOG_TRIVIAL(info) << "Slicing objects..." << log_memory_info();
 
     this->typed_slices = false;
 
@@ -1465,10 +1475,8 @@ void PrintObject::_slice()
     BOOST_LOG_TRIVIAL(debug) << "Slicing objects - removing top empty layers";
     while (! m_layers.empty()) {
         const Layer *layer = m_layers.back();
-        for (size_t region_id = 0; region_id < this->region_volumes.size(); ++ region_id)
-            if (layer->m_regions[region_id] != nullptr && ! layer->m_regions[region_id]->slices.empty())
-                // Non empty layer.
-                goto end;
+        if (! layer->empty())
+            goto end;
         delete layer;
         m_layers.pop_back();
 		if (! m_layers.empty())
@@ -1570,15 +1578,11 @@ std::vector<ExPolygons> PrintObject::_slice_volumes(const std::vector<float> &z,
         //FIXME better to perform slicing over each volume separately and then to use a Boolean operation to merge them.
         TriangleMesh mesh;
         for (const ModelVolume *v : volumes)
-#if ENABLE_MODELVOLUME_TRANSFORM
         {
             TriangleMesh vol_mesh(v->mesh);
             vol_mesh.transform(v->get_matrix());
             mesh.merge(vol_mesh);
         }
-#else
-        mesh.merge(v->mesh);
-#endif // ENABLE_MODELVOLUME_TRANSFORM
         if (mesh.stl.stats.number_of_facets > 0) {
             mesh.transform(m_trafo);
             // apply XY shift
@@ -1703,7 +1707,7 @@ void PrintObject::_make_perimeters()
     if (! this->set_started(posPerimeters))
         return;
 
-    BOOST_LOG_TRIVIAL(info) << "Generating perimeters...";
+    BOOST_LOG_TRIVIAL(info) << "Generating perimeters..." << log_memory_info();
     
     // merge slices if they were split into types
     if (this->typed_slices) {

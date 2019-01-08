@@ -925,6 +925,15 @@ void PrintConfigDef::init_fff_params()
     def->mode = comExpert;
     def->default_value = new ConfigOptionEnum<GCodeFlavor>(gcfRepRap);
 
+    def = this->add("high_current_on_filament_swap", coBool);
+    def->label = L("High extruder current on filament swap");
+    def->tooltip = L("It may be beneficial to increase the extruder motor current during the filament exchange"
+                   " sequence to allow for rapid ramming feed rates and to overcome resistance when loading"
+                   " a filament with an ugly shaped tip.");
+    def->cli = "high-current-on-filament-swap!";
+    def->mode = comExpert;
+    def->default_value = new ConfigOptionBool(0);
+
     def = this->add("infill_acceleration", coFloat);
     def->label = L("Infill");
     def->tooltip = L("This is the acceleration your printer will use for infill. Set zero to disable "
@@ -1297,10 +1306,11 @@ void PrintConfigDef::init_fff_params()
     def->default_value = new ConfigOptionString("");
     
     def = this->add("printhost_cafile", coString);
-    def->label = "HTTPS CA file";
+    def->label = "HTTPS CA File";
     def->tooltip = "Custom CA certificate file can be specified for HTTPS OctoPrint connections, in crt/pem format. "
                    "If left blank, the default OS CA certificate repository is used.";
     def->cli = "printhost-cafile=s";
+    def->mode = comAdvanced;
     def->default_value = new ConfigOptionString("");
 
     def = this->add("print_host", coString);
@@ -2416,6 +2426,19 @@ void PrintConfigDef::init_sla_params()
     def->min = 100;
     def->default_value = new ConfigOptionInt(1440);
 
+    def = this->add("display_orientation", coEnum);
+    def->label = L("Display orientation");
+    def->tooltip = L("Set the actual LCD display orientation inside the SLA printer."
+                     " Portrait mode will flip the meaning of display width and height parameters"
+                     " and the output images will be rotated by 90 degrees.");
+    def->cli = "display-orientation=s";
+    def->enum_keys_map = &ConfigOptionEnum<SLADisplayOrientation>::get_enum_values();
+    def->enum_values.push_back("landscape");
+    def->enum_values.push_back("portrait");
+    def->enum_labels.push_back(L("Landscape"));
+    def->enum_labels.push_back(L("Portrait"));
+    def->default_value = new ConfigOptionEnum<SLADisplayOrientation>(sladoPortrait);
+
     def = this->add("printer_correction", coFloats);
     def->full_label = L("Printer scaling correction");
     def->tooltip  = L("Printer scaling correction");
@@ -3125,6 +3148,13 @@ CLIConfigDef::CLIConfigDef()
 
 const CLIConfigDef cli_config_def;
 DynamicPrintAndCLIConfig::PrintAndCLIConfigDef DynamicPrintAndCLIConfig::s_def;
+
+void DynamicPrintAndCLIConfig::handle_legacy(t_config_option_key &opt_key, std::string &value) const
+{
+    if (cli_config_def.options.find(opt_key) == cli_config_def.options.end()) {
+        PrintConfigDef::handle_legacy(opt_key, value);
+    }
+}
 
 std::ostream& print_cli_options(std::ostream& out)
 {

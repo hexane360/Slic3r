@@ -77,6 +77,7 @@ public:
     void do_action(wxEvtHandler *target);
 
     bool is_enabled() const;
+    bool is_disabled() const;
     bool is_hovered() const;
     bool is_pressed() const;
 
@@ -94,34 +95,87 @@ private:
 // from left to right
 struct ItemsIconsTexture
 {
-    GLTexture texture;
-    // size of the square icons, in pixels
-    unsigned int items_icon_size;
-    // distance from the border, in pixels
-    unsigned int items_icon_border_size;
-    // distance between two adjacent icons (to avoid filtering artifacts), in pixels
-    unsigned int items_icon_gap_size;
+    struct Metadata
+    {
+        // path of the file containing the icons' texture
+        std::string filename;
+        // size of the square icons, in pixels
+        unsigned int icon_size;
+        // size of the border, in pixels
+        unsigned int icon_border_size;
+        // distance between two adjacent icons (to avoid filtering artifacts), in pixels
+        unsigned int icon_gap_size;
 
-    ItemsIconsTexture();
+        Metadata();
+    };
+
+    GLTexture texture;
+    Metadata metadata;
+};
+
+struct BackgroundTexture
+{
+    struct Metadata
+    {
+        // path of the file containing the background texture
+        std::string filename;
+        // size of the left edge, in pixels
+        unsigned int left;
+        // size of the right edge, in pixels
+        unsigned int right;
+        // size of the top edge, in pixels
+        unsigned int top;
+        // size of the bottom edge, in pixels
+        unsigned int bottom;
+
+        Metadata();
+    };
+
+    GLTexture texture;
+    Metadata metadata;
 };
 
 class GLToolbar
 {
 public:
+    enum EType : unsigned char
+    {
+        Normal,
+        Radio,
+        Num_Types
+    };
+
     struct Layout
     {
-        enum Type : unsigned char
+        enum EType : unsigned char
         {
             Horizontal,
             Vertical,
             Num_Types
         };
 
-        Type type;
+        enum EOrientation : unsigned int
+        {
+            Top,
+            Bottom,
+            Left,
+            Right,
+            Center,
+            Num_Locations
+        };
+
+        EType type;
+        EOrientation orientation;
         float top;
         float left;
+        float border;
         float separator_size;
         float gap_size;
+        float icons_scale;
+
+        float width;
+        float height;
+        bool dirty;
 
         Layout();
     };
@@ -129,25 +183,30 @@ public:
 private:
     typedef std::vector<GLToolbarItem*> ItemsList;
 
-    GLCanvas3D& m_parent;
+    EType m_type;
     bool m_enabled;
     ItemsIconsTexture m_icons_texture;
-    Layout m_layout;
+    BackgroundTexture m_background_texture;
+    mutable Layout m_layout;
 
     ItemsList m_items;
 
 public:
-    explicit GLToolbar(GLCanvas3D& parent);
+    explicit GLToolbar(EType type);
     ~GLToolbar();
 
-    bool init(const std::string& icons_texture_filename, unsigned int items_icon_size, unsigned int items_icon_border_size, unsigned int items_icon_gap_size);
-    
-    Layout::Type get_layout_type() const;
-    void set_layout_type(Layout::Type type);
+    bool init(const ItemsIconsTexture::Metadata& icons_texture, const BackgroundTexture::Metadata& background_texture);
+
+    Layout::EType get_layout_type() const;
+    void set_layout_type(Layout::EType type);
+    Layout::EOrientation get_layout_orientation() const;
+    void set_layout_orientation(Layout::EOrientation orientation);
 
     void set_position(float top, float left);
+    void set_border(float border);
     void set_separator_size(float size);
     void set_gap_size(float size);
+    void set_icons_scale(float scale);
 
     bool is_enabled() const;
     void set_enabled(bool enable);
@@ -160,119 +219,34 @@ public:
 
     void enable_item(const std::string& name);
     void disable_item(const std::string& name);
+    void select_item(const std::string& name);
 
     bool is_item_pressed(const std::string& name) const;
+    bool is_item_disabled(const std::string& name) const;
 
-#if ENABLE_REMOVE_TABS_FROM_PLATER
-    std::string update_hover_state(const Vec2d& mouse_pos);
-#else
-    void update_hover_state(const Vec2d& mouse_pos);
-#endif // ENABLE_REMOVE_TABS_FROM_PLATER
+    std::string update_hover_state(const Vec2d& mouse_pos, GLCanvas3D& parent);
 
     // returns the id of the item under the given mouse position or -1 if none
-    int contains_mouse(const Vec2d& mouse_pos) const;
+    int contains_mouse(const Vec2d& mouse_pos, const GLCanvas3D& parent) const;
 
-    void do_action(unsigned int item_id);
+    void do_action(unsigned int item_id, GLCanvas3D& parent);
 
-    void render() const;
+    void render(const GLCanvas3D& parent) const;    
 
 private:
+    void calc_layout() const;
     float get_width_horizontal() const;
     float get_width_vertical() const;
     float get_height_horizontal() const;
     float get_height_vertical() const;
     float get_main_size() const;
-#if ENABLE_REMOVE_TABS_FROM_PLATER
-    std::string update_hover_state_horizontal(const Vec2d& mouse_pos);
-    std::string update_hover_state_vertical(const Vec2d& mouse_pos);
-#else
-    void update_hover_state_horizontal(const Vec2d& mouse_pos);
-    void update_hover_state_vertical(const Vec2d& mouse_pos);
-#endif // ENABLE_REMOVE_TABS_FROM_PLATER
-    int contains_mouse_horizontal(const Vec2d& mouse_pos) const;
-    int contains_mouse_vertical(const Vec2d& mouse_pos) const;
+    std::string update_hover_state_horizontal(const Vec2d& mouse_pos, GLCanvas3D& parent);
+    std::string update_hover_state_vertical(const Vec2d& mouse_pos, GLCanvas3D& parent);
+    int contains_mouse_horizontal(const Vec2d& mouse_pos, const GLCanvas3D& parent) const;
+    int contains_mouse_vertical(const Vec2d& mouse_pos, const GLCanvas3D& parent) const;
 
-    void render_horizontal() const;
-    void render_vertical() const;
-};
-
-class GLRadioToolbarItem
-{
-public:
-    struct Data
-    {
-        std::string name;
-        std::string tooltip;
-        unsigned int sprite_id;
-        wxEventType action_event;
-
-        Data();
-    };
-
-    enum EState : unsigned char
-    {
-        Normal,
-        Pressed,
-        Hover,
-        HoverPressed,
-        Num_States
-    };
-
-private:
-    EState m_state;
-    Data m_data;
-
-public:
-    GLRadioToolbarItem(const Data& data);
-
-    EState get_state() const;
-    void set_state(EState state);
-
-    const std::string& get_name() const;
-    const std::string& get_tooltip() const;
-
-    bool is_hovered() const;
-    bool is_pressed() const;
-
-    void do_action(wxEvtHandler *target);
-
-    void render(unsigned int tex_id, float left, float right, float bottom, float top, unsigned int texture_size, unsigned int border_size, unsigned int icon_size, unsigned int gap_size) const;
-
-private:
-    GLTexture::Quad_UVs get_uvs(unsigned int texture_size, unsigned int border_size, unsigned int icon_size, unsigned int gap_size) const;
-};
-
-class GLRadioToolbar
-{
-    typedef std::vector<GLRadioToolbarItem*> ItemsList;
-
-    ItemsIconsTexture m_icons_texture;
-
-    ItemsList m_items;
-    float m_top;
-    float m_left;
-
-public:
-    GLRadioToolbar();
-    ~GLRadioToolbar();
-
-    bool init(const std::string& icons_texture_filename, unsigned int items_icon_size, unsigned int items_icon_border_size, unsigned int items_icon_gap_size);
-
-    bool add_item(const GLRadioToolbarItem::Data& data);
-
-    float get_height() const;
-
-    void set_position(float top, float left);
-    void set_selection(const std::string& name);
-
-    // returns the id of the item under the given mouse position or -1 if none
-    int contains_mouse(const Vec2d& mouse_pos, const GLCanvas3D& parent) const;
-
-    std::string update_hover_state(const Vec2d& mouse_pos, GLCanvas3D& parent);
-
-    void do_action(unsigned int item_id, GLCanvas3D& parent);
-
-    void render(const GLCanvas3D& parent) const;
+    void render_horizontal(const GLCanvas3D& parent) const;
+    void render_vertical(const GLCanvas3D& parent) const;
 };
 
 } // namespace GUI
