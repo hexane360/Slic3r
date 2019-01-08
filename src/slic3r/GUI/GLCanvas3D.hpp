@@ -218,6 +218,7 @@ class GLCanvas3D
         const BoundingBoxf3& get_bounding_box() const;
         bool contains(const Point& point) const;
         Point point_projection(const Point& point) const;
+        void set_old_background_color(bool old_background_color);
 
 #if ENABLE_PRINT_BED_MODELS
         void render(float theta, bool useVBOs) const;
@@ -237,6 +238,7 @@ class GLCanvas3D
 #endif // ENABLE_PRINT_BED_MODELS
         void _render_custom() const;
         static bool _are_equal(const Pointfs& bed_1, const Pointfs& bed_2);
+        bool m_old_background_color = false;
     };
 
     struct Axes
@@ -801,6 +803,7 @@ private:
     bool m_use_clipping_planes;
     mutable SlaCap m_sla_caps[2];
     std::string m_sidebar_field;
+    bool m_old_background_color;
 
     mutable GLVolumeCollection m_volumes;
     Selection m_selection;
@@ -847,7 +850,7 @@ public:
 
     void set_view_toolbar(GLToolbar* toolbar) { m_view_toolbar = toolbar; }
 
-    bool init(bool useVBOs, bool use_legacy_opengl);
+    bool init(bool useVBOs, bool use_legacy_opengl, bool old_background_color);
     void post_event(wxEvent &&event);
 
 #if !ENABLE_USE_UNIQUE_GLCONTEXT

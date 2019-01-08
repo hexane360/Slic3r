@@ -199,6 +199,7 @@ void GLCanvas3DManager::init_gl()
         m_gl_info.detect();
         const AppConfig* config = GUI::get_app_config();
         m_use_legacy_opengl = (config == nullptr) || (config->get("use_legacy_opengl") == "1");
+        m_old_background_color = !(config == nullptr) && (config->get("old_background_color") == "1");
         m_use_VBOs = !m_use_legacy_opengl && m_gl_info.is_version_greater_or_equal_to(2, 0);
         m_gl_initialized = true;
     }
@@ -257,7 +258,7 @@ bool GLCanvas3DManager::_init(GLCanvas3D& canvas)
     if (!m_gl_initialized)
         init_gl();
 
-    return canvas.init(m_use_VBOs, m_use_legacy_opengl);
+    return canvas.init(m_use_VBOs, m_use_legacy_opengl, m_old_background_color);
 }
 
 void GLCanvas3DManager::_detect_multisample(int* attribList)

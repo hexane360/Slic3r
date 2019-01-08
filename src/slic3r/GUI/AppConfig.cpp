@@ -59,6 +59,9 @@ void AppConfig::set_defaults()
     if (get("use_legacy_opengl").empty())
         set("use_legacy_opengl", "0");
 
+    if (get("old_background_color").empty())
+        set("old_background_color", "0");
+
     if (get("remember_output_path").empty())
         set("remember_output_path", "1");
 

@@ -96,6 +96,13 @@ void PreferencesDialog::build()
 	option = Option (def,"use_legacy_opengl");
 	m_optgroup->append_single_option_line(option);
 
+    def.label = L("Use old background color");
+    def.type = coBool;
+    def.tooltip = L("Use old dark blue background color in the main window.");
+    def.default_value = new ConfigOptionBool{ app_config->get("old_background_color")[0] == '1' };
+    option = Option (def,"old_background_color");
+    m_optgroup->append_single_option_line(option);
+
 	auto sizer = new wxBoxSizer(wxVERTICAL);
 	sizer->Add(m_optgroup->sizer, 0, wxEXPAND | wxBOTTOM | wxLEFT | wxRIGHT, 10);
 
@@ -110,8 +117,9 @@ void PreferencesDialog::build()
 
 void PreferencesDialog::accept()
 {
-	if (m_values.find("no_defaults")      != m_values.end()||
-		m_values.find("use_legacy_opengl")!= m_values.end()) {
+	if (m_values.find("no_defaults")         != m_values.end()||
+		m_values.find("use_legacy_opengl")   != m_values.end()||
+		m_values.find("old_background_color")!= m_values.end()) {
 		warning_catcher(this, _(L("You need to restart Slic3r to make the changes effective.")));
 	}
 

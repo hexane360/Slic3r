@@ -57,6 +57,7 @@ class GLCanvas3DManager
     GLInfo m_gl_info;
     bool m_gl_initialized;
     bool m_use_legacy_opengl;
+    bool m_old_background_color;
     bool m_use_VBOs;
     static EMultisampleState s_multisample;
 
