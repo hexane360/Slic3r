@@ -59,10 +59,10 @@ int main(int argc, char **argv)
     }
 
     // parse all command line options into a DynamicConfig
-    DynamicPrintAndCLIConfig config;
+    DynamicPrintAndCLIConfig all_config;
     t_config_option_keys input_files;
     // if any option is unsupported, print usage and abort immediately
-    if (! config.read_cli(argc, argv, &input_files)) {
+    if (! all_config.read_cli(argc, argv, &input_files)) {
         printUsage();
         return 0;
     }
@@ -96,21 +96,20 @@ int main(int argc, char **argv)
 
     // apply command line options to a more handy CLIConfig
     CLIConfig cli_config;
-    cli_config.apply(config, true);
+#ifdef __APPLE__
+	// Enable the GUI mode by default, to support drag & drop.
+	cli_config.gui.value = true;
+#endif /* __APPLE__ */
+
+    cli_config.apply(all_config, true);
     set_data_dir(cli_config.datadir.value);
 
-    DynamicPrintConfig print_config;
+    // Load the extra config values.
+    DynamicPrintConfig extra_config;
+    extra_config.apply(all_config, true);
 
-    if ((argc == 1 || cli_config.gui.value) && ! cli_config.no_gui.value && ! cli_config.help.value && cli_config.save.value.empty()) {
-#if 1
-        GUI::GUI_App *gui = new GUI::GUI_App();
-        GUI::GUI_App::SetInstance(gui);
-        wxEntry(argc, argv);
-#else
-        std::cout << "GUI support has not been built." << "\n";
-#endif
-    }
     // load config files supplied via --load
+    DynamicPrintConfig print_config;
     for (const std::string &file : cli_config.load.values) {
         if (! boost::filesystem::exists(file)) {
             boost::nowide::cout << "No such file: " << file << std::endl;
@@ -126,10 +125,43 @@ int main(int argc, char **argv)
         c.normalize();
         print_config.apply(c);
     }
-    
+
+    if ((input_files.empty() || cli_config.gui.value) && ! cli_config.no_gui.value && ! cli_config.help.value && cli_config.save.value.empty()) {
+#if 1
+        GUI::GUI_App *gui = new GUI::GUI_App();
+        GUI::GUI_App::SetInstance(gui);
+        gui->CallAfter([gui, &input_files, &cli_config, &extra_config, &print_config] {
+            if (! gui->initialized()) {
+                return;
+            }
+#if 0
+            // Load the cummulative config over the currently active profiles.
+            //FIXME if multiple configs are loaded, only the last one will have an effect.
+            // We need to decide what to do about loading of separate presets (just print preset, just filament preset etc).
+            // As of now only the full configs are supported here.
+            if (! print_config.empty())
+                gui->mainframe->load_config(print_config);
+#endif
+            if (! cli_config.load.values.empty())
+                // Load the last config to give it a name at the UI. The name of the preset may be later
+                // changed by loading an AMF or 3MF.
+                //FIXME this is not strictly correct, as one may pass a print/filament/printer profile here instead of a full config.
+				gui->mainframe->load_config_file(cli_config.load.values.back());
+            // If loading a 3MF file, the config is loaded from the last one.
+            gui->plater()->load_files(input_files, true, true);
+            if (! extra_config.empty())
+                gui->mainframe->load_config(extra_config);
+        });
+        return wxEntry(argc, argv);
+#else
+        std::cout << "GUI support has not been built." << "\n";
+		return -1;
+#endif
+    }
+
     // apply command line options to a more specific DynamicPrintConfig which provides normalize()
     // (command line options override --load files)
-    print_config.apply(config, true);
+    print_config.apply(extra_config, true);
     
     // write config if requested
     if (! cli_config.save.value.empty()) {
@@ -223,10 +255,6 @@ int main(int argc, char **argv)
                 model.arrange_objects(fff_print.config().min_object_distance());
                 model.center_instances_around_point(cli_config.print_center);
             }
-            if (outfile.empty()) {
-                outfile = model.propose_export_file_name();
-                outfile += (printer_technology == ptFFF) ? ".gcode" : ".zip";
-            }
             if (printer_technology == ptFFF) {
                 for (auto* mo : model.objects)
                     fff_print.auto_assign_extruders(mo);
@@ -236,6 +264,7 @@ int main(int argc, char **argv)
             std::string err = print->validate();
             if (err.empty()) {
                 if (printer_technology == ptFFF) {
+                    // The outfile is processed by a PlaceholderParser.
                     fff_print.export_gcode(outfile, nullptr);
                 } else {
                     assert(printer_technology == ptSLA);

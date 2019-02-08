@@ -20,6 +20,8 @@
 #include "libslic3r.h"
 #include "Config.hpp"
 
+// #define HAS_PRESSURE_EQUALIZER
+
 namespace Slic3r {
 
 enum PrinterTechnology
@@ -59,6 +61,12 @@ enum FilamentType {
 enum SLADisplayOrientation {
     sladoLandscape,
     sladoPortrait
+};
+
+enum SLAPillarConnectionMode {
+    slapcmZigZag,
+    slapcmCross,
+    slapcmDynamic
 };
 
 template<> inline const t_config_enum_values& ConfigOptionEnum<PrinterTechnology>::get_enum_values() {
@@ -157,6 +165,16 @@ template<> inline const t_config_enum_values& ConfigOptionEnum<SLADisplayOrienta
     static const t_config_enum_values keys_map = {
         { "landscape", sladoLandscape},
         { "portrait",  sladoPortrait}
+    };
+
+    return keys_map;
+}
+
+template<> inline const t_config_enum_values& ConfigOptionEnum<SLAPillarConnectionMode>::get_enum_values() {
+    static const t_config_enum_values keys_map = {
+        {"zigzag", slapcmZigZag},
+        {"cross", slapcmCross},
+        {"dynamic", slapcmDynamic}
     };
 
     return keys_map;
@@ -601,11 +619,14 @@ public:
     ConfigOptionStrings             filament_ramming_parameters;
     ConfigOptionBool                gcode_comments;
     ConfigOptionEnum<GCodeFlavor>   gcode_flavor;
+    ConfigOptionBool                gcode_label_objects;
     ConfigOptionString              layer_gcode;
     ConfigOptionFloat               max_print_speed;
     ConfigOptionFloat               max_volumetric_speed;
+#ifdef HAS_PRESSURE_EQUALIZER
     ConfigOptionFloat               max_volumetric_extrusion_rate_slope_positive;
     ConfigOptionFloat               max_volumetric_extrusion_rate_slope_negative;
+#endif
     ConfigOptionPercents            retract_before_wipe;
     ConfigOptionFloats              retract_length;
     ConfigOptionFloats              retract_length_toolchange;
@@ -672,11 +693,14 @@ protected:
         OPT_PTR(filament_ramming_parameters);
         OPT_PTR(gcode_comments);
         OPT_PTR(gcode_flavor);
+        OPT_PTR(gcode_label_objects);
         OPT_PTR(layer_gcode);
         OPT_PTR(max_print_speed);
         OPT_PTR(max_volumetric_speed);
+#ifdef HAS_PRESSURE_EQUALIZER
         OPT_PTR(max_volumetric_extrusion_rate_slope_positive);
         OPT_PTR(max_volumetric_extrusion_rate_slope_negative);
+#endif /* HAS_PRESSURE_EQUALIZER */
         OPT_PTR(retract_before_wipe);
         OPT_PTR(retract_length);
         OPT_PTR(retract_length_toolchange);
@@ -712,7 +736,7 @@ protected:
 class PrintConfig : public MachineEnvelopeConfig, public GCodeConfig
 {
     STATIC_PRINT_CONFIG_CACHE_DERIVED(PrintConfig)
-    PrintConfig() : GCodeConfig(0) { initialize_cache(); *this = s_cache_PrintConfig.defaults(); }
+	PrintConfig() : MachineEnvelopeConfig(0), GCodeConfig(0) { initialize_cache(); *this = s_cache_PrintConfig.defaults(); }
 public:
     double                          min_object_distance() const;
     static double                   min_object_distance(const ConfigBase *config);
@@ -791,7 +815,7 @@ public:
     ConfigOptionFloat               exp_time_first;
 
 protected:
-    PrintConfig(int) : GCodeConfig(1) {}
+	PrintConfig(int) : MachineEnvelopeConfig(1), GCodeConfig(1) {}
     void initialize(StaticCacheBase &cache, const char *base_ptr)
     {
         this->MachineEnvelopeConfig::initialize(cache, base_ptr);
@@ -955,6 +979,12 @@ public:
     // Radius in mm of the support pillars.
     ConfigOptionFloat support_pillar_diameter /*= 0.8*/;
 
+    // How the pillars are bridged together
+    ConfigOptionEnum<SLAPillarConnectionMode> support_pillar_connection_mode;
+
+    // Generate only ground facing supports
+    ConfigOptionBool support_buildplate_only;
+
     // TODO: unimplemented at the moment. This coefficient will have an impact
     // when bridges and pillars are merged. The resulting pillar should be a bit
     // thicker than the ones merging into it. How much thicker? I don't know
@@ -1009,6 +1039,8 @@ protected:
         OPT_PTR(support_head_penetration);
         OPT_PTR(support_head_width);
         OPT_PTR(support_pillar_diameter);
+        OPT_PTR(support_pillar_connection_mode);
+        OPT_PTR(support_buildplate_only);
         OPT_PTR(support_pillar_widening_factor);
         OPT_PTR(support_base_diameter);
         OPT_PTR(support_base_height);
@@ -1170,12 +1202,11 @@ public:
 class DynamicPrintAndCLIConfig : public DynamicPrintConfig
 {
 public:
-    DynamicPrintAndCLIConfig() { this->apply(FullPrintConfig::defaults()); this->apply(CLIConfig()); }
-    DynamicPrintAndCLIConfig(const DynamicPrintAndCLIConfig &other) : DynamicPrintConfig(other) {}
+	DynamicPrintAndCLIConfig() {}
+	DynamicPrintAndCLIConfig(const DynamicPrintAndCLIConfig &other) : DynamicPrintConfig(other) {}
 
     // Overrides ConfigBase::def(). Static configuration definition. Any value stored into this ConfigBase shall have its definition here.
     const ConfigDef*        def() const override { return &s_def; }
-    t_config_option_keys    keys() const override { return s_def.keys(); }
 
     // Verify whether the opt_key has not been obsoleted or renamed.
     // Both opt_key and value may be modified by handle_legacy().

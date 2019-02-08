@@ -59,6 +59,11 @@ void AppConfig::set_defaults()
     if (get("use_legacy_opengl").empty())
         set("use_legacy_opengl", "0");
 
+#if __APPLE__
+    if (get("use_retina_opengl").empty())
+        set("use_retina_opengl", "1");
+#endif
+
     if (get("old_background_color").empty())
         set("old_background_color", "0");
 

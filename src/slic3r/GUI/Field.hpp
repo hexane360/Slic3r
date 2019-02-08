@@ -74,7 +74,7 @@ protected:
     /// Call the attached on_kill_focus method. 
 	//! It's important to use wxEvent instead of wxFocusEvent,
 	//! in another case we can't unfocused control at all
-	void			on_kill_focus(wxEvent& event);
+	void			on_kill_focus();
     /// Call the attached on_change method. 
     void			on_set_focus(wxEvent& event);
     /// Call the attached on_change method. 
@@ -115,7 +115,7 @@ public:
     /// subclasses should overload with a specific version
     /// Postcondition: Method does not fire the on_change event.
     virtual void		set_value(const boost::any& value, bool change_event) = 0;
-    
+
     /// Gets a boost::any representing this control.
     /// subclasses should overload with a specific version
     virtual boost::any&	get_value() = 0;
@@ -127,6 +127,8 @@ public:
     inline void			toggle(bool en) { en ? enable() : disable(); }
 
 	virtual wxString	get_tooltip_text(const wxString& default_string);
+
+    void				field_changed() { on_change_field(); }
 
     // set icon to "UndoToSystemValue" button according to an inheritance of preset
 //	void				set_nonsys_btn_icon(const wxBitmap& icon);
@@ -226,6 +228,8 @@ protected:
 
 	// current value
 	boost::any			m_value;
+
+    bool    bEnterPressed = false;
     
 	friend class OptionsGroup;
 };
@@ -252,6 +256,8 @@ public:
 	~TextCtrl() {}
 
     void BUILD();
+    // Propagate value from field to the OptionGroupe and Config after kill_focus/ENTER
+    void propagate_value();
     wxWindow* window {nullptr};
 
     virtual void	set_value(const std::string& value, bool change_event = false) {
@@ -310,6 +316,8 @@ public:
 
 	wxWindow*		window{ nullptr };
 	void			BUILD() override;
+    /// Propagate value from field to the OptionGroupe and Config after kill_focus/ENTER
+    void	        propagate_value() ;
 
 	void			set_value(const std::string& value, bool change_event = false) {
 		m_disable_change_event = !change_event;
@@ -319,6 +327,7 @@ public:
 	void			set_value(const boost::any& value, bool change_event = false) {
 		m_disable_change_event = !change_event;
 		tmp_value = boost::any_cast<int>(value);
+        m_value = value;
 		dynamic_cast<wxSpinCtrl*>(window)->SetValue(tmp_value);
 		m_disable_change_event = false;
 	}
@@ -393,8 +402,8 @@ public:
 	wxTextCtrl*		y_textctrl{ nullptr };
 
 	void			BUILD()  override;
-
-    void            OnKillFocus(wxEvent& e, wxTextCtrl* win);
+    // Propagate value from field to the OptionGroupe and Config after kill_focus/ENTER
+    void            propagate_value(wxTextCtrl* win);
 	void			set_value(const Vec2d& value, bool change_event = false);
 	void			set_value(const boost::any& value, bool change_event = false);
 	boost::any&		get_value() override;

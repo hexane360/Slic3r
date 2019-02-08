@@ -87,6 +87,7 @@ void PreferencesDialog::build()
 	option = Option (def,"show_incompatible_presets");
 	m_optgroup->append_single_option_line(option);
 
+	// TODO: remove?
 	def.label = L("Use legacy OpenGL 1.1 rendering");
 	def.type = coBool;
 	def.tooltip = L("If you have rendering issues caused by a buggy OpenGL 2.0 driver, "
@@ -96,12 +97,22 @@ void PreferencesDialog::build()
 	option = Option (def,"use_legacy_opengl");
 	m_optgroup->append_single_option_line(option);
 
-    def.label = L("Use old background color");
-    def.type = coBool;
-    def.tooltip = L("Use old dark blue background color in the main window.");
-    def.default_value = new ConfigOptionBool{ app_config->get("old_background_color")[0] == '1' };
-    option = Option (def,"old_background_color");
-    m_optgroup->append_single_option_line(option);
+#if __APPLE__
+	def.label = L("Use Retina resolution for the 3D scene");
+	def.type = coBool;
+	def.tooltip = L("If enabled, the 3D scene will be rendered in Retina resolution. "
+	                "If you are experiencing 3D performance problems, disabling this option may help.");
+	def.default_value = new ConfigOptionBool{ app_config->get("use_retina_opengl") == "1" };
+	option = Option (def, "use_retina_opengl");
+	m_optgroup->append_single_option_line(option);
+#endif
+
+	def.label = L("Use old background color");
+	def.type = coBool;
+	def.tooltip = L("Use old dark blue background color in the main window.");
+	def.default_value = new ConfigOptionBool{ app_config->get("old_background_color")[0] == '1' };
+	option = Option (def,"old_background_color");
+	m_optgroup->append_single_option_line(option);
 
 	auto sizer = new wxBoxSizer(wxVERTICAL);
 	sizer->Add(m_optgroup->sizer, 0, wxEXPAND | wxBOTTOM | wxLEFT | wxRIGHT, 10);

@@ -66,12 +66,8 @@ void Field::PostInitialize()
 	BUILD();
 }
 
-void Field::on_kill_focus(wxEvent& event)
+void Field::on_kill_focus()
 {
-    // Without this, there will be nasty focus bugs on Windows.
-    // Also, docs for wxEvent::Skip() say "In general, it is recommended to skip all 
-    // non-command events to allow the default handling to take place."
-	event.Skip();
 	// call the registered function if it is available
     if (m_on_kill_focus!=nullptr) 
         m_on_kill_focus(m_opt_id);
@@ -147,19 +143,26 @@ void Field::get_value_by_opt_type(wxString& str)
 			break;
 		}
 		double val;
-		if(!str.ToCDouble(&val))
-		{
-			show_error(m_parent, _(L("Input value contains incorrect symbol(s).\nUse, please, only digits")));
-			set_value(double_to_string(val), true);
-		}
-		if (m_opt.min > val || val > m_opt.max)
-		{
-			show_error(m_parent, _(L("Input value is out of range")));
-			if (m_opt.min > val) val = m_opt.min;
-			if (val > m_opt.max) val = m_opt.max;
-			set_value(double_to_string(val), true);
-		}
-		m_value = val;
+		// Replace the first occurence of comma in decimal number.
+		str.Replace(",", ".", false);
+        if (str == ".")
+            val = 0.0;
+        else
+        {
+            if (!str.ToCDouble(&val))
+            {
+                show_error(m_parent, _(L("Invalid numeric input.")));
+                set_value(double_to_string(val), true);
+            }
+            if (m_opt.min > val || val > m_opt.max)
+            {
+                show_error(m_parent, _(L("Input value is out of range")));
+                if (m_opt.min > val) val = m_opt.min;
+                if (val > m_opt.max) val = m_opt.max;
+                set_value(double_to_string(val), true);
+            }
+        }
+        m_value = val;
 		break; }
 	case coString:
 	case coStrings:
@@ -167,10 +170,12 @@ void Field::get_value_by_opt_type(wxString& str)
         if (m_opt.type == coFloatOrPercent && !str.IsEmpty() &&  str.Last() != '%')
         {
             double val;
+			// Replace the first occurence of comma in decimal number.
+			str.Replace(",", ".", false);
             if (!str.ToCDouble(&val))
             {
-                show_error(m_parent, _(L("Input value contains incorrect symbol(s).\nUse, please, only digits")));
-                set_value(double_to_string(val), true);                
+                show_error(m_parent, _(L("Invalid numeric input.")));
+                set_value(double_to_string(val), true);
             }
             else if (m_opt.sidetext.rfind("mm/s") != std::string::npos && val > m_opt.max ||
                      m_opt.sidetext.rfind("mm ") != std::string::npos && val > 1)
@@ -250,10 +255,25 @@ void TextCtrl::BUILD() {
 		break; 
 	}
 
-    const long style = m_opt.multiline ? wxTE_MULTILINE : 0;
+    const long style = m_opt.multiline ? wxTE_MULTILINE : wxTE_PROCESS_ENTER/*0*/;
 	auto temp = new wxTextCtrl(m_parent, wxID_ANY, text_value, wxDefaultPosition, size, style);
+#ifdef __WXOSX__
+    temp->OSXDisableAllSmartSubstitutions();
+#endif // __WXOSX__
 
 	temp->SetToolTip(get_tooltip_text(text_value));
+
+    if (style == wxTE_PROCESS_ENTER) {
+        temp->Bind(wxEVT_TEXT_ENTER, ([this, temp](wxEvent& e)
+        {
+#if !defined(__WXGTK__)
+            e.Skip();
+            temp->GetToolTip()->Enable(true);
+#endif // __WXGTK__
+            propagate_value();
+            bEnterPressed = true;
+        }), temp->GetId());
+    }
 
     temp->Bind(wxEVT_SET_FOCUS, ([this](wxEvent& e) { on_set_focus(e); }), temp->GetId());
     
@@ -272,14 +292,15 @@ void TextCtrl::BUILD() {
 
 	temp->Bind(wxEVT_KILL_FOCUS, ([this, temp](wxEvent& e)
 	{
-#if !defined(__WXGTK__)
 		e.Skip();
+#if !defined(__WXGTK__)
 		temp->GetToolTip()->Enable(true);
 #endif // __WXGTK__
-        if (is_defined_input_value<wxTextCtrl>(window, m_opt.type))
-            on_change_field();
-        else
-            on_kill_focus(e);
+        if (bEnterPressed) {
+            bEnterPressed = false;
+            return;
+        }
+        propagate_value();
 	}), temp->GetId());
     /*
         temp->Bind(wxEVT_TEXT, ([this](wxCommandEvent& evt)
@@ -311,9 +332,18 @@ void TextCtrl::BUILD() {
     window = dynamic_cast<wxWindow*>(temp);
 }	
 
+void TextCtrl::propagate_value()
+{
+    if (is_defined_input_value<wxTextCtrl>(window, m_opt.type))
+        on_change_field();
+    else
+        on_kill_focus();
+}
+
 boost::any& TextCtrl::get_value()
 {
 	wxString ret_str = static_cast<wxTextCtrl*>(window)->GetValue();
+	// modifies ret_string!
 	get_value_by_opt_type(ret_str);
 
 	return m_value;
@@ -398,7 +428,7 @@ void SpinCtrl::BUILD() {
 	const int max_val = m_opt.max < 2147483647 ? m_opt.max : 2147483647;
 
 	auto temp = new wxSpinCtrl(m_parent, wxID_ANY, text_value, wxDefaultPosition, size,
-		0, min_val, max_val, default_value);
+		0|wxTE_PROCESS_ENTER, min_val, max_val, default_value);
 
 #ifndef __WXOSX__
     // #ys_FIXME_KILL_FOCUS 
@@ -407,15 +437,23 @@ void SpinCtrl::BUILD() {
     // and on TEXT event under OSX
 	temp->Bind(wxEVT_KILL_FOCUS, ([this](wxEvent& e)
 	{
-        if (tmp_value < 0)
-	        on_kill_focus(e);
-        else {
-            e.Skip();
-            on_change_field();
+        e.Skip();
+        if (bEnterPressed) {
+            bEnterPressed = false;
+            return;
         }
+
+        propagate_value();
 	}), temp->GetId());
 
-	temp->Bind(wxEVT_SPINCTRL, ([this](wxCommandEvent e) {  on_change_field();  }), temp->GetId());
+    temp->Bind(wxEVT_SPINCTRL, ([this](wxCommandEvent e) {  propagate_value();  }), temp->GetId()); 
+    
+    temp->Bind(wxEVT_TEXT_ENTER, ([this](wxCommandEvent e)
+    {
+        e.Skip();
+        propagate_value();
+        bEnterPressed = true;
+    }), temp->GetId());
 #endif
 
 	temp->Bind(wxEVT_TEXT, ([this](wxCommandEvent e)
@@ -430,12 +468,7 @@ void SpinCtrl::BUILD() {
 			tmp_value = std::stoi(value);
         else tmp_value = -9999;
 #ifdef __WXOSX__
-        if (tmp_value < 0) {
-            if (m_on_kill_focus != nullptr)
-                m_on_kill_focus(m_opt_id);
-        }
-        else 
-            on_change_field();
+        propagate_value();
 #endif
 	}), temp->GetId());
 	
@@ -443,6 +476,14 @@ void SpinCtrl::BUILD() {
 
 	// recast as a wxWindow to fit the calling convention
 	window = dynamic_cast<wxWindow*>(temp);
+}
+
+void SpinCtrl::propagate_value()
+{
+    if (tmp_value < 0)
+        on_kill_focus();
+    else if (boost::any_cast<int>(m_value) != tmp_value)
+        on_change_field();
 }
 
 void Choice::BUILD() {
@@ -483,7 +524,7 @@ void Choice::BUILD() {
                     on_change_field();
             }
             else
-                on_kill_focus(e);
+                on_kill_focus();
         }), temp->GetId());
     }
 
@@ -690,15 +731,19 @@ boost::any& Choice::get_value()
 			m_value = static_cast<PrintHostType>(ret_enum);
 		else if (m_opt_id.compare("display_orientation") == 0)
 			m_value = static_cast<SLADisplayOrientation>(ret_enum);
+        else if (m_opt_id.compare("support_pillar_connection_mode") == 0)
+            m_value = static_cast<SLAPillarConnectionMode>(ret_enum);
 	}
     else if (m_opt.gui_type == "f_enum_open") {
         const int ret_enum = static_cast<wxComboBox*>(window)->GetSelection();
         if (ret_enum < 0 || m_opt.enum_values.empty() || m_opt.type == coStrings)
+			// modifies ret_string!
             get_value_by_opt_type(ret_str);
         else 
             m_value = atof(m_opt.enum_values[ret_enum].c_str());
     }
 	else	
+		// modifies ret_string!
         get_value_by_opt_type(ret_str);
 
 	return m_value;
@@ -755,8 +800,8 @@ void PointCtrl::BUILD()
 	val = default_pt(1);
 	wxString Y = val - int(val) == 0 ? wxString::Format(_T("%i"), int(val)) : wxNumberFormatter::ToString(val, 2, wxNumberFormatter::Style_None);
 
-	x_textctrl = new wxTextCtrl(m_parent, wxID_ANY, X, wxDefaultPosition, field_size);
-	y_textctrl = new wxTextCtrl(m_parent, wxID_ANY, Y, wxDefaultPosition, field_size);
+	x_textctrl = new wxTextCtrl(m_parent, wxID_ANY, X, wxDefaultPosition, field_size, wxTE_PROCESS_ENTER);
+	y_textctrl = new wxTextCtrl(m_parent, wxID_ANY, Y, wxDefaultPosition, field_size, wxTE_PROCESS_ENTER);
 
 	temp->Add(new wxStaticText(m_parent, wxID_ANY, "x : "), 0, wxALIGN_CENTER_VERTICAL, 0);
 	temp->Add(x_textctrl);
@@ -766,8 +811,11 @@ void PointCtrl::BUILD()
 // 	x_textctrl->Bind(wxEVT_TEXT, ([this](wxCommandEvent e) { on_change_field(); }), x_textctrl->GetId());
 // 	y_textctrl->Bind(wxEVT_TEXT, ([this](wxCommandEvent e) { on_change_field(); }), y_textctrl->GetId());
 
-    x_textctrl->Bind(wxEVT_KILL_FOCUS, ([this](wxEvent& e) { OnKillFocus(e, x_textctrl); }), x_textctrl->GetId());
-    y_textctrl->Bind(wxEVT_KILL_FOCUS, ([this](wxEvent& e) { OnKillFocus(e, x_textctrl); }), y_textctrl->GetId());
+    x_textctrl->Bind(wxEVT_TEXT_ENTER, ([this](wxCommandEvent e) { propagate_value(x_textctrl); }), x_textctrl->GetId());
+	y_textctrl->Bind(wxEVT_TEXT_ENTER, ([this](wxCommandEvent e) { propagate_value(y_textctrl); }), y_textctrl->GetId());
+
+    x_textctrl->Bind(wxEVT_KILL_FOCUS, ([this](wxEvent& e) { e.Skip(); propagate_value(x_textctrl); }), x_textctrl->GetId());
+    y_textctrl->Bind(wxEVT_KILL_FOCUS, ([this](wxEvent& e) { e.Skip(); propagate_value(y_textctrl); }), y_textctrl->GetId());
 
 	// 	// recast as a wxWindow to fit the calling convention
 	sizer = dynamic_cast<wxSizer*>(temp);
@@ -776,14 +824,12 @@ void PointCtrl::BUILD()
 	y_textctrl->SetToolTip(get_tooltip_text(X+", "+Y));
 }
 
-void PointCtrl::OnKillFocus(wxEvent& e, wxTextCtrl* win)
+void PointCtrl::propagate_value(wxTextCtrl* win)
 {
-    e.Skip();
-    if (!win->GetValue().empty()) {
+    if (!win->GetValue().empty()) 
         on_change_field();
-    }
     else
-        on_kill_focus(e);
+        on_kill_focus();
 }
 
 void PointCtrl::set_value(const Vec2d& value, bool change_event)
@@ -826,8 +872,8 @@ void StaticText::BUILD()
 	if (m_opt.height >= 0) size.SetHeight(m_opt.height);
 	if (m_opt.width >= 0) size.SetWidth(m_opt.width);
 
-	wxString legend(static_cast<const ConfigOptionString*>(m_opt.default_value)->value);
-	auto temp = new wxStaticText(m_parent, wxID_ANY, legend, wxDefaultPosition, size);
+    const wxString legend(static_cast<const ConfigOptionString*>(m_opt.default_value)->value);
+    auto temp = new wxStaticText(m_parent, wxID_ANY, legend, wxDefaultPosition, size, wxST_ELLIPSIZE_MIDDLE);
     temp->SetFont(wxGetApp().bold_font());
 
 	// 	// recast as a wxWindow to fit the calling convention

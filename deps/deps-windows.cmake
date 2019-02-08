@@ -1,8 +1,21 @@
 
-if (${DEPS_BITS} EQUAL 32)
-    set(DEP_MSVC_GEN "Visual Studio 12")
+if (MSVC_VERSION EQUAL 1800)
+    set(DEP_VS_VER "12")
+    set(DEP_BOOST_TOOLSET "msvc-12.0")
+elseif (MSVC_VERSION EQUAL 1900)
+    set(DEP_VS_VER "14")
+    set(DEP_BOOST_TOOLSET "msvc-14.0")
+elseif (MSVC_VERSION GREATER 1900)
+    set(DEP_VS_VER "15")
+    set(DEP_BOOST_TOOLSET "msvc-14.1")
 else ()
-    set(DEP_MSVC_GEN "Visual Studio 12 Win64")
+    message(FATAL_ERROR "Unsupported MSVC version")
+endif ()
+
+if (${DEPS_BITS} EQUAL 32)
+    set(DEP_MSVC_GEN "Visual Studio ${DEP_VS_VER}")
+else ()
+    set(DEP_MSVC_GEN "Visual Studio ${DEP_VS_VER} Win64")
 endif ()
 
 
@@ -15,8 +28,8 @@ endif ()
 
 ExternalProject_Add(dep_boost
     EXCLUDE_FROM_ALL 1
-    URL "https://dl.bintray.com/boostorg/release/1.63.0/source/boost_1_63_0.tar.gz"
-    URL_HASH SHA256=fe34a4e119798e10b8cc9e565b3b0284e9fd3977ec8a1b19586ad1dec397088b
+    URL "https://dl.bintray.com/boostorg/release/1.66.0/source/boost_1_66_0.tar.gz"
+    URL_HASH SHA256=bd0df411efd9a585e5a2212275f8762079fed8842264954675a4fddc46cfcf60
     BUILD_IN_SOURCE 1
     CONFIGURE_COMMAND bootstrap.bat
     BUILD_COMMAND b2.exe
@@ -29,7 +42,7 @@ ExternalProject_Add(dep_boost
         --with-regex
         "--prefix=${DESTDIR}/usr/local"
         "address-model=${DEPS_BITS}"
-        toolset=msvc-12.0
+        "toolset=${DEP_BOOST_TOOLSET}"
         link=static
         variant=release
         threading=multi
@@ -155,8 +168,8 @@ endif ()
 ExternalProject_Add(dep_libpng
     DEPENDS dep_zlib
     EXCLUDE_FROM_ALL 1
-    URL "http://prdownloads.sourceforge.net/libpng/libpng-1.6.35.tar.xz?download"
-    URL_HASH SHA256=23912ec8c9584917ed9b09c5023465d71709dce089be503c7867fec68a93bcd7
+    URL "https://github.com/glennrp/libpng/archive/v1.6.36.tar.gz"
+    URL_HASH SHA256=5bef5a850a9255365a2dc344671b7e9ef810de491bd479c2506ac3c337e2d84f
     CMAKE_GENERATOR "${DEP_MSVC_GEN}"
     CMAKE_ARGS
         -DPNG_SHARED=OFF
@@ -204,7 +217,7 @@ ExternalProject_Add(dep_libcurl
     URL_HASH SHA256=cc245bf9a1a42a45df491501d97d5593392a03f7b4f07b952793518d97666115
     BUILD_IN_SOURCE 1
     CONFIGURE_COMMAND ""
-    BUILD_COMMAND cd winbuild && nmake /f Makefile.vc mode=static VC=12 GEN_PDB=yes DEBUG=no "MACHINE=${DEP_LIBCURL_TARGET}"
+    BUILD_COMMAND cd winbuild && nmake /f Makefile.vc mode=static "VC=${DEP_VS_VER}" GEN_PDB=yes DEBUG=no "MACHINE=${DEP_LIBCURL_TARGET}"
     INSTALL_COMMAND cd builds\\libcurl-*-release-*-winssl
         && "${CMAKE_COMMAND}" -E copy_directory include "${DESTDIR}\\usr\\local\\include"
         && "${CMAKE_COMMAND}" -E copy_directory lib "${DESTDIR}\\usr\\local\\lib"
@@ -214,7 +227,7 @@ if (${DEP_DEBUG})
     ExternalProject_Add_Step(dep_libcurl build_debug
         DEPENDEES build
         DEPENDERS install
-        COMMAND cd winbuild && nmake /f Makefile.vc mode=static VC=12 GEN_PDB=yes DEBUG=yes "MACHINE=${DEP_LIBCURL_TARGET}"
+        COMMAND cd winbuild && nmake /f Makefile.vc mode=static "VC=${DEP_VS_VER}" GEN_PDB=yes DEBUG=yes "MACHINE=${DEP_LIBCURL_TARGET}"
         WORKING_DIRECTORY "${SOURCE_DIR}"
     )
     ExternalProject_Add_Step(dep_libcurl install_debug

@@ -27,7 +27,11 @@ void enable_screensaver();
 bool debugged();
 void break_to_debugger();
 
-AppConfig*		get_app_config();
+// Platform specific Ctrl+/Alt+ (Windows, Linux) vs. ⌘/⌥ (OSX) prefixes 
+extern const std::string& shortkey_ctrl_prefix();
+extern const std::string& shortkey_alt_prefix();
+
+extern AppConfig* get_app_config();
 
 extern void add_menus(wxMenuBar *menu, int event_preferences_changed, int event_language_change);
 
@@ -69,11 +73,6 @@ boost::filesystem::path	into_path(const wxString &str);
 
 // Returns the dimensions of the screen on which the main frame is displayed
 bool get_current_screen_size(wxWindow *window, unsigned &width, unsigned &height);
-
-// Save window size and maximized status into AppConfig
-void save_window_size(wxTopLevelWindow *window, const std::string &name);
-// Restore the above
-void restore_window_size(wxTopLevelWindow *window, const std::string &name);
 
 // Display an About dialog
 extern void about();

@@ -25,7 +25,9 @@ endif()
 option(SLIC3R_STATIC 			"Compile Slic3r with static libraries (Boost, TBB, glew)" ${SLIC3R_STATIC_INITIAL})
 option(SLIC3R_GUI    			"Compile Slic3r with GUI components (OpenGL, wxWidgets)" 1)
 option(SLIC3R_FHS               "Assume Slic3r is to be installed in a FHS directory structure" 0)
+option(SLIC3R_WX_STABLE         "Build against wxWidgets stable (3.0) as oppsed to dev (3.1) on Linux" 0)
 option(SLIC3R_PROFILE 			"Compile Slic3r with an invasive Shiny profiler" 0)
+option(SLIC3R_PCH               "Use precompiled headers" 1)
 option(SLIC3R_MSVC_COMPILE_PARALLEL "Compile on Visual Studio in parallel" 1)
 option(SLIC3R_MSVC_PDB          "Generate PDB files on MSVC in Release mode" 1)
 option(SLIC3R_PERL_XS           "Compile XS Perl module and enable Perl unit and integration tests" 0)
@@ -36,6 +38,15 @@ option(SLIC3R_SYNTAXONLY        "Only perform source code correctness checking, 
 option(SLIC3R_BUILD_SANDBOXES   "Build development sandboxes" OFF)
 option(SLIC3R_BUILD_TESTS       "Build unit tests" OFF)
 
+# Print out the SLIC3R_* cache options
+get_cmake_property(_cache_vars CACHE_VARIABLES)
+list (SORT _cache_vars)
+foreach (_cache_var ${_cache_vars})
+    if("${_cache_var}" MATCHES "^SLIC3R_")
+        message(STATUS "${_cache_var}: ${${_cache_var}}")
+    endif ()
+endforeach()
+
 if (MSVC)
     if (SLIC3R_MSVC_COMPILE_PARALLEL)
 	   add_compile_options(/MP)
@@ -44,7 +55,6 @@ if (MSVC)
     # error C3859: virtual memory range for PCH exceeded; please recompile with a command line option of '-Zm90' or greater
     add_compile_options(-bigobj -Zm316)
 endif ()
-
 
 # Display and check CMAKE_PREFIX_PATH
 message(STATUS "SLIC3R_STATIC: ${SLIC3R_STATIC}")
@@ -64,8 +74,6 @@ foreach (DIR ${PREFIX_PATH_CHECK})
     endif ()
 endforeach ()
 
-message(STATUS "SLIC3R_FHS: ${SLIC3R_FHS}")
-
 # Add our own cmake module path.
 list(APPEND CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/cmake/modules/)
 
@@ -76,6 +84,11 @@ set(CMAKE_CXX_STANDARD 11)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
+
+if(NOT WIN32)
+    # Add DEBUG flags to debug builds.
+    add_compile_options("$<$<CONFIG:DEBUG>:-DDEBUG>")
+endif()
 
 # To be able to link libslic3r with the Perl XS module.
 # Once we get rid of Perl and libslic3r is linked statically, we can get rid of -fPIC
@@ -105,21 +118,26 @@ if(WIN32)
 endif()
 
 if (APPLE)
-    if (NOT CMAKE_OSX_DEPLOYMENT_TARGET)
-        set(CMAKE_OSX_DEPLOYMENT_TARGET "10.9" CACHE STRING "OS X Deployment target (SDK version)" FORCE)
+    message("OS X SDK Path: ${CMAKE_OSX_SYSROOT}")
+    if (CMAKE_OSX_DEPLOYMENT_TARGET)
+        message("OS X Deployment Target: ${CMAKE_OSX_DEPLOYMENT_TARGET}")
+    else ()
+        message("OS X Deployment Target: (default)")
     endif ()
-    message(STATUS "Mac OS deployment target (SDK version): ${CMAKE_OSX_DEPLOYMENT_TARGET}")
 endif ()
 
 if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
-    # Workaround for an old CMake, which does not understand CMAKE_CXX_STANDARD.
-    add_compile_options(-std=c++11 -Wall -Wno-reorder)
     find_package(PkgConfig REQUIRED)
+
+    if (CMAKE_VERSION VERSION_LESS "3.1")
+        # Workaround for an old CMake, which does not understand CMAKE_CXX_STANDARD.
+        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11")
+    endif()
 endif()
 
 if (CMAKE_COMPILER_IS_GNUCC OR CMAKE_COMPILER_IS_GNUXX)
     # Adding -fext-numeric-literals to enable GCC extensions on definitions of quad float literals, which are required by Boost.
-    add_compile_options(-fext-numeric-literals)
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fext-numeric-literals" )
 
     if (SLIC3R_SYNTAXONLY)
         set(CMAKE_CXX_ARCHIVE_CREATE "true")
@@ -136,8 +154,14 @@ if (CMAKE_COMPILER_IS_GNUCC OR CMAKE_COMPILER_IS_GNUXX)
 endif()
 
 if ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU" OR "${CMAKE_CXX_COMPILER_ID}" STREQUAL "Clang")
+    add_compile_options(-Wall)
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-reorder" )
+
     # On GCC and Clang, no return from a non-void function is a warning only. Here, we make it an error.
     add_compile_options(-Werror=return-type)
+
+    #removes LOTS of extraneous Eigen warnings
+    add_compile_options(-Wno-ignored-attributes)
 
     if (SLIC3R_ASAN)
         add_compile_options(-fsanitize=address -fno-omit-frame-pointer)
@@ -149,6 +173,11 @@ if ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU" OR "${CMAKE_CXX_COMPILER_ID}" STRE
         endif ()
     endif ()
 endif()
+
+if (APPLE)
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Werror=partial-availability -Werror=unguarded-availability -Werror=unguarded-availability-new")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Werror=partial-availability -Werror=unguarded-availability -Werror=unguarded-availability-new")
+endif ()
 
 # Where all the bundled libraries reside?
 set(LIBDIR ${CMAKE_CURRENT_SOURCE_DIR}/src)
@@ -245,7 +274,7 @@ endif()
 
 # Find eigen3 or use bundled version
 if (NOT SLIC3R_STATIC)
-    find_package(Eigen3)
+    find_package(Eigen3 3)
 endif ()
 if (NOT Eigen3_FOUND)
     set(Eigen3_FOUND 1)

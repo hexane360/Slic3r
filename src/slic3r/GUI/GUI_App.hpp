@@ -71,12 +71,8 @@ static wxString dots("…", wxConvUTF8);
 
 class GUI_App : public wxApp
 {
+    bool            m_initialized { false };
     bool            app_conf_exists{ false };
-
-    // Lock to guard the callback stack
-    std::mutex      callback_register;
-    // callbacks registered to run during idle event.
-    std::stack<std::function<void()>>    m_cb{};
 
     wxColour        m_color_label_modified;
     wxColour        m_color_label_sys;
@@ -95,6 +91,7 @@ class GUI_App : public wxApp
 
 public:
     bool            OnInit() override;
+    bool            initialized() const { return m_initialized; }
 
     GUI_App();
 
@@ -121,12 +118,9 @@ public:
 //                                 wxMessageDialog* message_dialog,
                                 const std::string& err);
 //     void            notify(/*message*/);
-    void            update_ui_from_settings();
-    void            CallAfter(std::function<void()> cb);
 
-    void            window_pos_save(wxTopLevelWindow* window, const std::string &name);
-    void            window_pos_restore(wxTopLevelWindow* window, const std::string &name);
-    void            window_pos_sanitize(wxTopLevelWindow* window);
+    void            persist_window_geometry(wxTopLevelWindow *window);
+    void            update_ui_from_settings();
 
     bool            select_language(wxArrayString & names, wxArrayLong & identifiers);
     bool            load_language();
@@ -134,15 +128,19 @@ public:
     void            get_installed_languages(wxArrayString & names, wxArrayLong & identifiers);
 
     Tab*            get_tab(Preset::Type type);
-    ConfigMenuIDs   get_view_mode();
-    ConfigOptionMode get_opt_mode();
+    ConfigOptionMode get_mode();
+    void            save_mode(const /*ConfigOptionMode*/int mode) ;
     void            update_mode();
 
     void            add_config_menu(wxMenuBar *menu);
     bool            check_unsaved_changes();
     bool            checked_tab(Tab* tab);
-    void            delete_tab_from_list(Tab* tab);
     void            load_current_presets();
+
+#ifdef __APPLE__
+    // wxWidgets override to get an event on open files.
+    void            MacOpenFiles(const wxArrayString &fileNames) override;
+#endif /* __APPLE */
 
     Sidebar&            sidebar();
     ObjectManipulation* obj_manipul();
@@ -167,6 +165,10 @@ public:
 
     PrintHostJobQueue& printhost_job_queue() { return *m_printhost_job_queue.get(); }
 
+private:
+    void            window_pos_save(wxTopLevelWindow* window, const std::string &name);
+    void            window_pos_restore(wxTopLevelWindow* window, const std::string &name);
+    void            window_pos_sanitize(wxTopLevelWindow* window);
 };
 DECLARE_APP(GUI_App)
 

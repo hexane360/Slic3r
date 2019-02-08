@@ -17,7 +17,7 @@ where `N` is the number of CPU cores available.
 
 Additional CMake flags may be applicable as explained below.
 
-### Dependenciy resolution
+### Dependency resolution
 
 By default Slic3r looks for dependencies the default way CMake looks for them, ie. in default system locations.
 On Linux this will typically make Slic3r depend on dynamically loaded libraries from the system, however, Slic3r can be told
@@ -45,6 +45,16 @@ Note that `/usr/local` needs to be appended to the destdir path and also the pre
 
 **Warning**: Once the dependency bundle is installed in a destdir, the destdir cannot be moved elsewhere.
 This is because wxWidgets hardcode the installation path.
+
+### wxWidgets version
+
+By default, Slic3r PE looks for wxWidgets 3.1, this is because the 3.1 version has
+a number of bugfixes and improvements not found in 3.0. However, it can also be built with wxWidgets 3.0.
+This is done by passing this option to CMake:
+
+    -DSLIC3R_WX_STABLE=1
+
+Note that Slic3r PE is tested with wxWidgets 3.0 somewhat sporadically and so there may be bugs in bleeding edge releases.
 
 ### Build variant
 

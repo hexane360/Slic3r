@@ -4,6 +4,8 @@
 #include "libslic3r_version.h"
 
 // this needs to be included early for MSVC (listing it in Build.PL is not enough)
+#include <memory>
+#include <algorithm>
 #include <ostream>
 #include <iostream>
 #include <math.h>
@@ -13,7 +15,8 @@
 #include <stdint.h>
 #include <stdarg.h>
 #include <vector>
-#include <boost/thread.hpp>
+#include <cassert>
+#include <cmath>
 
 #include "Technologies.hpp"
 
@@ -160,6 +163,12 @@ static inline T lerp(const T& a, const T& b, Number t)
 {
     assert((t >= Number(-EPSILON)) && (t <= Number(1) + Number(EPSILON)));
     return (Number(1) - t) * a + t * b;
+}
+
+template <typename Number>
+static inline bool is_approx(Number value, Number test_value)
+{
+    return std::fabs(double(value) - double(test_value)) < double(EPSILON);
 }
 
 } // namespace Slic3r

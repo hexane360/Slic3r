@@ -161,9 +161,17 @@ public:
     }
     const std::string&  compatible_printers_condition() const { return const_cast<Preset*>(this)->compatible_printers_condition(); }
 
-    static PrinterTechnology& printer_technology(DynamicPrintConfig &cfg) { return cfg.option<ConfigOptionEnum<PrinterTechnology>>("printer_technology", true)->value; }
-    PrinterTechnology&        printer_technology() { return Preset::printer_technology(this->config); }
-    const PrinterTechnology&  printer_technology() const { return Preset::printer_technology(const_cast<Preset*>(this)->config); }
+    // Return a printer technology, return ptFFF if the printer technology is not set.
+    static PrinterTechnology printer_technology(const DynamicPrintConfig &cfg) {
+        auto *opt = cfg.option<ConfigOptionEnum<PrinterTechnology>>("printer_technology");
+        // The following assert may trigger when importing some legacy profile, 
+        // but it is safer to keep it here to capture the cases where the "printer_technology" key is queried, where it should not.
+//        assert(opt != nullptr);
+        return (opt == nullptr) ? ptFFF : opt->value;
+    }
+    PrinterTechnology   printer_technology() const { return Preset::printer_technology(this->config); }
+    // This call returns a reference, it may add a new entry into the DynamicPrintConfig.
+    PrinterTechnology&  printer_technology_ref() { return this->config.option<ConfigOptionEnum<PrinterTechnology>>("printer_technology", true)->value; }
 
     // Mark this preset as compatible if it is compatible with active_printer.
     bool                update_compatible(const Preset &active_printer, const DynamicPrintConfig *extra_config, const Preset *active_print = nullptr);
@@ -222,7 +230,10 @@ public:
     void            reset(bool delete_files);
 
     Preset::Type    type() const { return m_type; }
+    // Name, to be used on the screen and in error messages. Not localized.
     std::string     name() const;
+    // Name, to be used as a section name in config bundle, and as a folder name for presets.
+    std::string     section_name() const;
     const std::deque<Preset>& operator()() const { return m_presets; }
 
     // Add default preset at the start of the collection, increment the m_default_preset counter.
@@ -364,6 +375,9 @@ public:
     // Compare the content of get_selected_preset() with get_edited_preset() configs, return the list of keys where they differ.
     std::vector<std::string>    current_different_from_parent_options(const bool deep_compare = false) const
         { return dirty_options(&this->get_edited_preset(), this->get_selected_preset_parent(), deep_compare); }
+
+    // Return a sorted list of system preset names.
+    std::vector<std::string>    system_preset_names() const;
 
     // Update the choice UI from the list of presets.
     // If show_incompatible, all presets are shown, otherwise only the compatible presets are shown.

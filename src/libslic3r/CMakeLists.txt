@@ -71,8 +71,8 @@ add_library(libslic3r STATIC
     GCode/CoolingBuffer.hpp
     GCode/PostProcessor.cpp
     GCode/PostProcessor.hpp    
-    GCode/PressureEqualizer.cpp
-    GCode/PressureEqualizer.hpp
+#    GCode/PressureEqualizer.cpp
+#    GCode/PressureEqualizer.hpp
     GCode/PreviewData.cpp
     GCode/PreviewData.hpp
     GCode/PrintExtents.cpp
@@ -88,8 +88,8 @@ add_library(libslic3r STATIC
     GCode.hpp
     GCodeReader.cpp
     GCodeReader.hpp
-    GCodeSender.cpp
-    GCodeSender.hpp
+    # GCodeSender.cpp
+    # GCodeSender.hpp
     GCodeTimeEstimator.cpp
     GCodeTimeEstimator.hpp
     GCodeWriter.cpp
@@ -154,6 +154,8 @@ add_library(libslic3r STATIC
     SVG.cpp
     SVG.hpp
     Technologies.hpp
+    Tesselate.cpp
+    Tesselate.hpp
     TriangleMesh.cpp
     TriangleMesh.hpp
     utils.cpp
@@ -171,7 +173,7 @@ add_library(libslic3r STATIC
     SLA/SLASpatIndex.hpp
 )
 
-if (NOT SLIC3R_SYNTAXONLY)
+if (SLIC3R_PCH AND NOT SLIC3R_SYNTAXONLY)
     add_precompiled_header(libslic3r pchheader.hpp FORCEINCLUDE)
 endif ()
 
@@ -187,6 +189,7 @@ target_link_libraries(libslic3r
     ${EXPAT_LIBRARIES}
     ${GLEW_LIBRARIES}
     ${PNG_LIBRARIES}
+    glu-libtess
     polypartition
     poly2tri
     qhull

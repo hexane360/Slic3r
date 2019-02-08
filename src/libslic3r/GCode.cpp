@@ -103,8 +103,7 @@ OozePrevention::_get_temp(GCode &gcodegen)
         : gcodegen.config().temperature.get_at(gcodegen.writer().extruder()->id());
 }
 
-std::string
-Wipe::wipe(GCode &gcodegen, bool toolchange)
+std::string Wipe::wipe(GCode &gcodegen, bool toolchange)
 {
     std::string gcode;
     
@@ -137,19 +136,22 @@ Wipe::wipe(GCode &gcodegen, bool toolchange)
         wipe_path.clip_end(wipe_path.length() - wipe_dist);
     
         // subdivide the retraction in segments
-        for (const Line &line : wipe_path.lines()) {
-            double segment_length = line.length();
-            /*  Reduce retraction length a bit to avoid effective retraction speed to be greater than the configured one
-                due to rounding (TODO: test and/or better math for this)  */
-            double dE = length * (segment_length / wipe_dist) * 0.95;
-            //FIXME one shall not generate the unnecessary G1 Fxxx commands, here wipe_speed is a constant inside this cycle.
-            // Is it here for the cooling markers? Or should it be outside of the cycle?
-            gcode += gcodegen.writer().set_speed(wipe_speed*60, "", gcodegen.enable_cooling_markers() ? ";_WIPE" : "");
-            gcode += gcodegen.writer().extrude_to_xy(
-                gcodegen.point_to_gcode(line.b),
-                -dE,
-                "wipe and retract"
-            );
+        if (! wipe_path.empty()) {
+            for (const Line &line : wipe_path.lines()) {
+                double segment_length = line.length();
+                /*  Reduce retraction length a bit to avoid effective retraction speed to be greater than the configured one
+                    due to rounding (TODO: test and/or better math for this)  */
+                double dE = length * (segment_length / wipe_dist) * 0.95;
+                //FIXME one shall not generate the unnecessary G1 Fxxx commands, here wipe_speed is a constant inside this cycle.
+                // Is it here for the cooling markers? Or should it be outside of the cycle?
+                gcode += gcodegen.writer().set_speed(wipe_speed*60, "", gcodegen.enable_cooling_markers() ? ";_WIPE" : "");
+                gcode += gcodegen.writer().extrude_to_xy(
+                    gcodegen.point_to_gcode(line.b),
+                    -dE,
+                    "wipe and retract"
+                );
+            }
+			gcodegen.set_last_pos(wipe_path.points.back());
         }
         
         // prevent wiping again on same path
@@ -660,10 +662,14 @@ void GCode::_do_export(Print &print, FILE *file)
     m_cooling_buffer = make_unique<CoolingBuffer>(*this);
     if (print.config().spiral_vase.value)
         m_spiral_vase = make_unique<SpiralVase>(print.config());
+#ifdef HAS_PRESSURE_EQUALIZER
     if (print.config().max_volumetric_extrusion_rate_slope_positive.value > 0 ||
         print.config().max_volumetric_extrusion_rate_slope_negative.value > 0)
         m_pressure_equalizer = make_unique<PressureEqualizer>(&print.config());
     m_enable_extrusion_role_markers = (bool)m_pressure_equalizer;
+#else /* HAS_PRESSURE_EQUALIZER */
+    m_enable_extrusion_role_markers = false;
+#endif /* HAS_PRESSURE_EQUALIZER */
 
     // Write information on the generator.
     _write_format(file, "; %s\n\n", Slic3r::header_slic3r_generated().c_str());
@@ -858,7 +864,7 @@ void GCode::_do_export(Print &print, FILE *file)
     if (! (has_wipe_tower && print.config().single_extruder_multi_material_priming)) {
         // Set initial extruder only after custom start G-code.
         // Ugly hack: Do not set the initial extruder if the extruder is primed using the MMU priming towers at the edge of the print bed.
-        _write(file, this->set_extruder(initial_extruder_id));
+        _write(file, this->set_extruder(initial_extruder_id, 0.));
     }
 
     // Do all objects for each layer.
@@ -916,8 +922,10 @@ void GCode::_do_export(Print &print, FILE *file)
                     this->process_layer(file, print, lrs, tool_ordering.tools_for_layer(ltp.print_z()), &copy - object.copies().data());
                     print.throw_if_canceled();
                 }
+#ifdef HAS_PRESSURE_EQUALIZER
                 if (m_pressure_equalizer)
                     _write(file, m_pressure_equalizer->process("", true));
+#endif /* HAS_PRESSURE_EQUALIZER */
                 ++ finished_objects;
                 // Flag indicating whether the nozzle temperature changes from 1st to 2nd layer were performed.
                 // Reset it when starting another object from 1st layer.
@@ -972,8 +980,10 @@ void GCode::_do_export(Print &print, FILE *file)
             this->process_layer(file, print, layer.second, layer_tools, size_t(-1));
             print.throw_if_canceled();
         }
+#ifdef HAS_PRESSURE_EQUALIZER
         if (m_pressure_equalizer)
             _write(file, m_pressure_equalizer->process("", true));
+#endif /* HAS_PRESSURE_EQUALIZER */
         if (m_wipe_tower)
             // Purge the extruder, pull out the active filament.
             _write(file, m_wipe_tower->finalize(*this));
@@ -1532,15 +1542,13 @@ void GCode::process_layer(
         }
     } // for objects
 
-
-
     // Extrude the skirt, brim, support, perimeters, infill ordered by the extruders.
     std::vector<std::unique_ptr<EdgeGrid::Grid>> lower_layer_edge_grids(layers.size());
     for (unsigned int extruder_id : layer_tools.extruders)
     {
         gcode += (layer_tools.has_wipe_tower && m_wipe_tower) ?
             m_wipe_tower->tool_change(*this, extruder_id, extruder_id == layer_tools.extruders.back()) :
-            this->set_extruder(extruder_id);
+            this->set_extruder(extruder_id, print_z);
 
         // let analyzer tag generator aware of a role type change
         if (m_enable_analyzer && layer_tools.has_wipe_tower && m_wipe_tower)
@@ -1588,9 +1596,11 @@ void GCode::process_layer(
         auto objects_by_extruder_it = by_extruder.find(extruder_id);
         if (objects_by_extruder_it == by_extruder.end())
             continue;
+
         // We are almost ready to print. However, we must go through all the objects twice to print the the overridden extrusions first (infill/perimeter wiping feature):
-        for (int print_wipe_extrusions=const_cast<LayerTools&>(layer_tools).wiping_extrusions().is_anything_overridden(); print_wipe_extrusions>=0; --print_wipe_extrusions) {
-            if (print_wipe_extrusions == 0)
+        bool is_anything_overridden = const_cast<LayerTools&>(layer_tools).wiping_extrusions().is_anything_overridden();
+        for (int print_wipe_extrusions = is_anything_overridden; print_wipe_extrusions>=0; --print_wipe_extrusions) {
+            if (is_anything_overridden && print_wipe_extrusions == 0)
                 gcode+="; PURGING FINISHED\n";
 
             for (ObjectByExtruder &object_by_extruder : objects_by_extruder_it->second) {
@@ -1613,6 +1623,8 @@ void GCode::process_layer(
 
                 unsigned int copy_id = 0;
                 for (const Point &copy : copies) {
+                    if (this->config().gcode_label_objects)
+                        gcode += std::string("; printing object ") + print_object->model_object()->name + " id:" + std::to_string(layer_id) + " copy " + std::to_string(copy_id) + "\n";
                     // When starting a new object, use the external motion planner for the first travel move.
                     std::pair<const PrintObject*, Point> this_object_copy(print_object, copy);
                     if (m_last_obj_copy != this_object_copy)
@@ -1627,7 +1639,7 @@ void GCode::process_layer(
                         m_layer = layers[layer_id].layer();
                     }
                     for (ObjectByExtruder::Island &island : object_by_extruder.islands) {
-                        const auto& by_region_specific = const_cast<LayerTools&>(layer_tools).wiping_extrusions().is_anything_overridden() ? island.by_region_per_copy(copy_id, extruder_id, print_wipe_extrusions) : island.by_region;
+                        const auto& by_region_specific = is_anything_overridden ? island.by_region_per_copy(copy_id, extruder_id, print_wipe_extrusions) : island.by_region;
 
                         if (print.config().infill_first) {
                             gcode += this->extrude_infill(print, by_region_specific);
@@ -1637,7 +1649,9 @@ void GCode::process_layer(
                             gcode += this->extrude_infill(print,by_region_specific);
                         }
                     }
-                    ++copy_id;
+                    if (this->config().gcode_label_objects)
+						gcode += std::string("; stop printing object ") + print_object->model_object()->name + " id:" + std::to_string(layer_id) + " copy " + std::to_string(copy_id) + "\n";
+                    ++ copy_id;
                 }
             }
         }
@@ -1655,11 +1669,13 @@ void GCode::process_layer(
     if (m_cooling_buffer)
         gcode = m_cooling_buffer->process_layer(gcode, layer.id());
 
+#ifdef HAS_PRESSURE_EQUALIZER
     // Apply pressure equalization if enabled;
     // printf("G-code before filter:\n%s\n", gcode.c_str());
     if (m_pressure_equalizer)
         gcode = m_pressure_equalizer->process(gcode.c_str(), false);
     // printf("G-code after filter:\n%s\n", out.c_str());
+#endif /* HAS_PRESSURE_EQUALIZER */
     
     _write(file, gcode);
     BOOST_LOG_TRIVIAL(trace) << "Exported layer " << layer.id() << " print_z " << print_z << 
@@ -2578,9 +2594,11 @@ std::string GCode::travel_to(const Point &point, ExtrusionRole role, std::string
     
     // use G1 because we rely on paths being straight (G0 may make round paths)
     Lines lines = travel.lines();
-    for (Lines::const_iterator line = lines.begin(); line != lines.end(); ++line)
-	    gcode += m_writer.travel_to_xy(this->point_to_gcode(line->b), comment);
-    
+    if (! lines.empty()) {
+        for (const Line &line : lines)
+    	    gcode += m_writer.travel_to_xy(this->point_to_gcode(line.b), comment);    
+        this->set_last_pos(lines.back().b);
+    }
     return gcode;
 }
 
@@ -2646,7 +2664,7 @@ std::string GCode::unretract(bool toolchange)
     return gcode;
 }
 
-std::string GCode::set_extruder(unsigned int extruder_id)
+std::string GCode::set_extruder(unsigned int extruder_id, double print_z)
 {
     if (!m_writer.need_toolchange(extruder_id))
         return "";
@@ -2680,6 +2698,8 @@ std::string GCode::set_extruder(unsigned int extruder_id)
         DynamicConfig config;
         config.set_key_value("previous_extruder", new ConfigOptionInt((int)m_writer.extruder()->id()));
         config.set_key_value("next_extruder",     new ConfigOptionInt((int)extruder_id));
+        config.set_key_value("layer_num",         new ConfigOptionInt(m_layer_index));
+        config.set_key_value("layer_z",           new ConfigOptionFloat(print_z));
         gcode += placeholder_parser_process("toolchange_gcode", m_config.toolchange_gcode.value, extruder_id, &config);
         check_add_eol(gcode);
     }

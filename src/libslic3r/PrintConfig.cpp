@@ -75,7 +75,7 @@ void PrintConfigDef::init_fff_params()
                    "This is mostly useful with Bowden extruders which suffer from oozing. "
                    "This feature slows down both the print and the G-code generation.");
     def->cli = "avoid-crossing-perimeters!";
-    def->mode = comAdvanced;
+    def->mode = comExpert;
     def->default_value = new ConfigOptionBool(false);
 
     def = this->add("bed_temperature", coInts);
@@ -172,6 +172,7 @@ void PrintConfigDef::init_fff_params()
     def->cli = "bridge-speed=f";
     def->aliases = { "bridge_feed_rate" };
     def->min = 0;
+    def->mode = comAdvanced;
     def->default_value = new ConfigOptionFloat(60);
 
     def = this->add("brim_width", coFloat);
@@ -326,7 +327,7 @@ void PrintConfigDef::init_fff_params()
     def->sidetext = L("mm");
     def->cli = "elefant-foot-compensation=f";
     def->min = 0;
-    def->mode = comExpert;
+    def->mode = comAdvanced;
     def->default_value = new ConfigOptionFloat(0);
 
     def = this->add("end_gcode", coString);
@@ -403,6 +404,7 @@ void PrintConfigDef::init_fff_params()
     def->cli = "external-perimeter-speed=s";
     def->ratio_over = "perimeter_speed";
     def->min = 0;
+    def->mode = comAdvanced;
     def->default_value = new ConfigOptionFloatOrPercent(50, true);
 
     def = this->add("external_perimeters_first", coBool);
@@ -421,7 +423,7 @@ void PrintConfigDef::init_fff_params()
                    "Slic3r keeps adding perimeters, until more than 70% of the loop immediately above "
                    "is supported.");
     def->cli = "extra-perimeters!";
-    def->mode = comAdvanced;
+    def->mode = comExpert;
     def->default_value = new ConfigOptionBool(true);
 
     def = this->add("extruder", coInt);
@@ -706,12 +708,14 @@ void PrintConfigDef::init_fff_params()
     def->enum_values.push_back("EDGE");
     def->enum_values.push_back("NGEN");
     def->enum_values.push_back("PVA");
+    def->mode = comAdvanced;
     def->default_value = new ConfigOptionStrings { "PLA" };
 
     def = this->add("filament_soluble", coBools);
     def->label = L("Soluble material");
     def->tooltip = L("Soluble material is most likely used for a soluble support.");
     def->cli = "filament-soluble!";
+    def->mode = comAdvanced;
     def->default_value = new ConfigOptionBools { false };
 
     def = this->add("filament_cost", coFloats);
@@ -884,6 +888,7 @@ void PrintConfigDef::init_fff_params()
     def->sidetext = L("mm/s");
     def->cli = "gap-fill-speed=f";
     def->min = 0;
+    def->mode = comAdvanced;
     def->default_value = new ConfigOptionFloat(20);
 
     def = this->add("gcode_comments", coBool);
@@ -924,6 +929,15 @@ void PrintConfigDef::init_fff_params()
     def->enum_labels.push_back(L("No extrusion"));
     def->mode = comExpert;
     def->default_value = new ConfigOptionEnum<GCodeFlavor>(gcfRepRap);
+
+    def = this->add("gcode_label_objects", coBool);
+    def->label = "Label objects";
+    def->tooltip = "Enable this to add comments into the G-Code labeling print moves with what object they belong to,"
+                   " which is useful for the Octoprint CancelObject plugin. This settings is NOT compatible with "
+                   "Single Extruder Multi Material setup and Wipe into Object / Wipe into Infill.";
+    def->cli = "gcode-label-objects!";
+    def->mode = comAdvanced;
+    def->default_value = new ConfigOptionBool(0);
 
     def = this->add("high_current_on_filament_swap", coBool);
     def->label = L("High extruder current on filament swap");
@@ -1014,6 +1028,7 @@ void PrintConfigDef::init_fff_params()
     def->cli = "infill-speed=f";
     def->aliases = { "print_feed_rate", "infill_feed_rate" };
     def->min = 0;
+    def->mode = comAdvanced;
     def->default_value = new ConfigOptionFloat(80);
 
     def = this->add("inherits", coString);
@@ -1202,6 +1217,7 @@ void PrintConfigDef::init_fff_params()
     def->mode = comExpert;
     def->default_value = new ConfigOptionFloat(0);
 
+#ifdef HAS_PRESSURE_EQUALIZER
     def = this->add("max_volumetric_extrusion_rate_slope_positive", coFloat);
     def->label = L("Max volumetric slope positive");
     def->tooltip = L("This experimental setting is used to limit the speed of change in extrusion rate. "
@@ -1225,6 +1241,7 @@ void PrintConfigDef::init_fff_params()
     def->min = 0;
     def->mode = comExpert;
     def->default_value = new ConfigOptionFloat(0);
+#endif /* HAS_PRESSURE_EQUALIZER */
 
     def = this->add("min_fan_speed", coInts);
     def->label = L("Min");
@@ -1429,6 +1446,7 @@ void PrintConfigDef::init_fff_params()
     def->cli = "perimeter-speed=f";
     def->aliases = { "perimeter_feed_rate" };
     def->min = 0;
+    def->mode = comAdvanced;
     def->default_value = new ConfigOptionFloat(60);
 
     def = this->add("perimeters", coInt);
@@ -1637,7 +1655,7 @@ void PrintConfigDef::init_fff_params()
     def->enum_labels.push_back(L("Nearest"));
     def->enum_labels.push_back(L("Aligned"));
     def->enum_labels.push_back(L("Rear")); 
-    def->mode = comAdvanced;
+    def->mode = comSimple;
     def->default_value = new ConfigOptionEnum<SeamPosition>(spAligned);
 
 #if 0
@@ -1683,6 +1701,7 @@ void PrintConfigDef::init_fff_params()
     def->max = 300000;
     def->enum_values.push_back("115200");
     def->enum_values.push_back("250000");
+    def->mode = comAdvanced;
     def->default_value = new ConfigOptionInt(250000);
 
     def = this->add("skirt_distance", coFloat);
@@ -1736,6 +1755,7 @@ void PrintConfigDef::init_fff_params()
     def->cli = "small-perimeter-speed=s";
     def->ratio_over = "perimeter_speed";
     def->min = 0;
+    def->mode = comAdvanced;
     def->default_value = new ConfigOptionFloatOrPercent(15, false);
 
     def = this->add("solid_infill_below_area", coFloat);
@@ -1792,6 +1812,7 @@ void PrintConfigDef::init_fff_params()
     def->ratio_over = "infill_speed";
     def->aliases = { "solid_infill_feed_rate" };
     def->min = 0;
+    def->mode = comAdvanced;
     def->default_value = new ConfigOptionFloatOrPercent(20, false);
 
     def = this->add("solid_layers", coInt);
@@ -1883,7 +1904,7 @@ void PrintConfigDef::init_fff_params()
     def->tooltip = L("If checked, supports will be generated automatically based on the overhang threshold value."\
                      " If unchecked, supports will be generated inside the \"Support Enforcer\" volumes only.");
     def->cli = "support-material-auto!";
-    def->mode = comAdvanced;
+    def->mode = comSimple;
     def->default_value = new ConfigOptionBool(true);
 
     def = this->add("support_material_xy_spacing", coFloatOrPercent);
@@ -1915,7 +1936,7 @@ void PrintConfigDef::init_fff_params()
     def->category = L("Support material");
     def->tooltip = L("Only create support if it lies on a build plate. Don't create support on a print.");
     def->cli = "support-material-buildplate-only!";
-    def->mode = comAdvanced;
+    def->mode = comSimple;
     def->default_value = new ConfigOptionBool(false);
 
     def = this->add("support_material_contact_distance", coFloat);
@@ -2017,6 +2038,7 @@ void PrintConfigDef::init_fff_params()
     def->cli = "support-material-interface-speed=s";
     def->ratio_over = "support_material_speed";
     def->min = 0;
+    def->mode = comAdvanced;
     def->default_value = new ConfigOptionFloatOrPercent(100, true);
 
     def = this->add("support_material_pattern", coEnum);
@@ -2051,6 +2073,7 @@ void PrintConfigDef::init_fff_params()
     def->sidetext = L("mm/s");
     def->cli = "support-material-speed=f";
     def->min = 0;
+    def->mode = comAdvanced;
     def->default_value = new ConfigOptionFloat(60);
 
     def = this->add("support_material_synchronize_layers", coBool);
@@ -2153,6 +2176,7 @@ void PrintConfigDef::init_fff_params()
     def->cli = "top-solid-infill-speed=s";
     def->ratio_over = "solid_infill_speed";
     def->min = 0;
+    def->mode = comAdvanced;
     def->default_value = new ConfigOptionFloatOrPercent(15, false);
 
     def = this->add("top_solid_layers", coInt);
@@ -2515,7 +2539,6 @@ void PrintConfigDef::init_sla_params()
     def->label = L("Generate supports");
     def->category = L("Supports");
     def->tooltip = L("Generate supports for the models");
-    def->sidetext = L("");
     def->cli = "";
     def->default_value = new ConfigOptionBool(true);
 
@@ -2555,13 +2578,36 @@ void PrintConfigDef::init_sla_params()
     def->min = 0;
     def->default_value = new ConfigOptionFloat(1.0);
 
+    def = this->add("support_pillar_connection_mode", coEnum);
+    def->label = L("Support pillar connection mode");
+    def->tooltip = L("Controls the bridge type between two neigboring pillars."
+                     " Can be zig-zag, cross (double zig-zag) or dynamic which"
+                     " will automatically switch between the first two depending"
+                     " on the distance of the two pillars.");
+    def->cli = "";
+    def->enum_keys_map = &ConfigOptionEnum<SLAPillarConnectionMode>::get_enum_values();
+    def->enum_values.push_back("zigzag");
+    def->enum_values.push_back("cross");
+    def->enum_values.push_back("dynamic");
+    def->enum_labels.push_back(L("Zig-Zag"));
+    def->enum_labels.push_back(L("Cross"));
+    def->enum_labels.push_back(L("Dynamic"));
+    def->default_value = new ConfigOptionEnum<SLAPillarConnectionMode>(slapcmDynamic);
+
+    def = this->add("support_buildplate_only", coBool);
+    def->label = L("Support on build plate only");
+    def->category = L("Supports");
+    def->tooltip = L("Only create support if it lies on a build plate. Don't create support on a print.");
+    def->cli = "support-buildplate-only!";
+    def->mode = comSimple;
+    def->default_value = new ConfigOptionBool(false);
+
     def = this->add("support_pillar_widening_factor", coFloat);
     def->label = L("Pillar widening factor");
     def->category = L("Supports");
     def->tooltip = L("Merging bridges or pillars into another pillars can "
                      "increase the radius. Zero means no increase, one means "
                      "full increase.");
-    def->sidetext = L("");
     def->cli = "";
     def->min = 0;
     def->max = 1;
@@ -2643,14 +2689,13 @@ void PrintConfigDef::init_sla_params()
     def->label = L("Use pad");
     def->category = L("Pad");
     def->tooltip = L("Add a pad underneath the supported model");
-    def->sidetext = L("");
     def->cli = "";
     def->default_value = new ConfigOptionBool(true);
 
     def = this->add("pad_wall_thickness", coFloat);
     def->label = L("Pad wall thickness");
     def->category = L("Pad");
-    def->tooltip = L("");
+//     def->tooltip = L("");
     def->sidetext = L("mm");
     def->cli = "";
     def->min = 0;
@@ -2659,7 +2704,7 @@ void PrintConfigDef::init_sla_params()
     def = this->add("pad_wall_height", coFloat);
     def->label = L("Pad wall height");
     def->category = L("Pad");
-    def->tooltip = L("");
+//     def->tooltip = L("");
     def->sidetext = L("mm");
     def->cli = "";
     def->min = 0;
@@ -2668,7 +2713,7 @@ void PrintConfigDef::init_sla_params()
     def = this->add("pad_max_merge_distance", coFloat);
     def->label = L("Max merge distance");
     def->category = L("Pad");
-    def->tooltip = L("");
+//     def->tooltip = L("");
     def->sidetext = L("mm");
     def->cli = "";
     def->min = 0;
@@ -2677,7 +2722,7 @@ void PrintConfigDef::init_sla_params()
     def = this->add("pad_edge_radius", coFloat);
     def->label = L("Pad edge radius");
     def->category = L("Pad");
-    def->tooltip = L("");
+//     def->tooltip = L("");
     def->sidetext = L("mm");
     def->cli = "";
     def->min = 0;
@@ -2742,6 +2787,9 @@ void PrintConfigDef::handle_legacy(t_config_option_key &opt_key, std::string &va
         "start_perimeters_at_concave_points", "start_perimeters_at_non_overhang", "randomize_start", 
         "seal_position", "vibration_limit", "bed_size", 
         "print_center", "g0", "threads", "pressure_advance", "wipe_tower_per_color_wipe"
+#ifndef HAS_PRESSURE_EQUALIZER
+        , "max_volumetric_extrusion_rate_slope_positive", "max_volumetric_extrusion_rate_slope_negative"
+#endif /* HAS_PRESSURE_EQUALIZER */
     };
 
     if (ignore.find(opt_key) != ignore.end()) {
@@ -3075,7 +3123,7 @@ CLIConfigDef::CLIConfigDef()
     def->tooltip = L("Forces the GUI launch instead of command line slicing "
                      "(if you supply a model file, it will be loaded into the plater)");
     def->cli = "gui";
-    def->default_value = new ConfigOptionBool(true);
+    def->default_value = new ConfigOptionBool(false);
     
     def = this->add("info", coBool);
     def->label = L("Output Model Info");

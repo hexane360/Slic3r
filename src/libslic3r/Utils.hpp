@@ -8,6 +8,8 @@
 
 #include "libslic3r.h"
 
+namespace boost { namespace filesystem { class directory_entry; }}
+
 namespace Slic3r {
 
 extern void set_logging_level(unsigned int level);
@@ -60,6 +62,12 @@ extern int rename_file(const std::string &from, const std::string &to);
 
 // Copy a file, adjust the access attributes, so that the target is writable.
 extern int copy_file(const std::string &from, const std::string &to);
+
+// Ignore system and hidden files, which may be created by the DropBox synchronisation process.
+// https://github.com/prusa3d/Slic3r/issues/1298
+extern bool is_plain_file(const boost::filesystem::directory_entry &path);
+extern bool is_ini_file(const boost::filesystem::directory_entry &path);
+extern bool is_idx_file(const boost::filesystem::directory_entry &path);
 
 // File path / name / extension splitting utilities, working with UTF-8,
 // to be published to Perl.
@@ -157,6 +165,16 @@ template<class T> size_t next_highest_power_of_2(T v,
 
 
 extern std::string xml_escape(std::string text);
+
+
+#if defined __GNUC__ & __GNUC__ < 5
+// Older GCCs don't have std::is_trivially_copyable
+// cf. https://gcc.gnu.org/onlinedocs/gcc-4.9.4/libstdc++/manual/manual/status.html#status.iso.2011
+#warning "GCC version < 5, faking std::is_trivially_copyable"
+template<typename T> struct IsTriviallyCopyable { static constexpr bool value = true; };
+#else
+template<typename T> struct IsTriviallyCopyable : public std::is_trivially_copyable<T> {};
+#endif
 
 
 class ScopeGuard
